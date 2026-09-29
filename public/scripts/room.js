@@ -32,7 +32,7 @@
         const payload = await ACMTNCrypto.decryptMessage(room.key, message);
         if (payload) addMessage(payload);
       }
-    } catch { showError(document.getElementById("message-error"), ACMTNI18n.t("connectionError")); }
+    } catch { showError(document.getElementById("message-error"), "Connection lost. Retrying…"); }
   }
 
   function startChat() {
@@ -55,35 +55,39 @@
   function initialiseRoom() {
     const expectedHash = roomHashFromUrl();
     if (!ROOM_HASH_PATTERN.test(expectedHash)) { location.replace("/404.html"); return; }
-    const gateForm = document.getElementById("gate-form"); const gatePin = document.getElementById("gate-pin"); const gateError = document.getElementById("gate-error"); const gateButton = document.getElementById("gate-enter");
+    const gatePin = document.getElementById("gate-pin"); const gateError = document.getElementById("gate-error"); const gateButton = document.getElementById("gate-enter");
     const entryPin = sessionStorage.getItem("acmtn:entry-pin"); sessionStorage.removeItem("acmtn:entry-pin");
     const enterRoom = async () => {
-      clearError(gateError); const original = gateButton.textContent; gateButton.disabled = true; gateButton.textContent = ACMTNI18n.t("deriving", "Preparing secure room…");
+      clearError(gateError); const original = gateButton.textContent; gateButton.disabled = true; gateButton.textContent = "Preparing…";
       try { await openRoom(gatePin.value); gatePin.value = ""; }
-      catch (error) { showError(gateError, error.message === "wrong_room" ? ACMTNI18n.t("wrongPin") : ACMTNI18n.t("invalidPin")); gateButton.disabled = false; gateButton.textContent = original; }
+      catch (error) { showError(gateError, error.message === "wrong_room" ? "This PIN does not match this room." : "Use 1–255 ASCII characters."); gateButton.disabled = false; gateButton.textContent = original; }
     };
     gateButton.onclick = enterRoom;
     gatePin.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); enterRoom(); } });
     if (entryPin) { gatePin.value = entryPin; enterRoom(); }
-    document.getElementById("nickname-form").addEventListener("submit", (event) => {
-      event.preventDefault(); const input = document.getElementById("nickname"); const error = document.getElementById("nickname-error"); clearError(error);
-      if (!ACMTNCrypto.isValidNickname(input.value)) { showError(error, ACMTNI18n.t("invalidNickname")); return; }
+    const chooseNickname = () => {
+      const input = document.getElementById("nickname"); const error = document.getElementById("nickname-error"); clearError(error);
+      if (!ACMTNCrypto.isValidNickname(input.value)) { showError(error, "Use a name of up to 255 characters."); return; }
       nickname = input.value.trim(); input.value = ""; startChat();
-    });
-    document.getElementById("message-form").addEventListener("submit", async (event) => {
-      event.preventDefault(); const input = document.getElementById("message"); const error = document.getElementById("message-error"); clearError(error);
+    };
+    document.getElementById("start-chat").onclick = chooseNickname;
+    document.getElementById("nickname").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); chooseNickname(); } });
+    const sendMessage = async () => {
+      const input = document.getElementById("message"); const error = document.getElementById("message-error"); const button = document.getElementById("send-message"); clearError(error);
       const messageText = input.value;
-      if (!messageText.trim() || Array.from(messageText).length > 4000) { showError(error, ACMTNI18n.t("invalidMessage")); return; }
-      const button = event.currentTarget.querySelector("button"); button.disabled = true;
+      if (!messageText.trim() || Array.from(messageText).length > 4000) { showError(error, "Write a message of up to 4,000 characters."); return; }
+      button.disabled = true;
       try {
         const id = ACMTNCrypto.randomId();
         const encrypted = await ACMTNCrypto.encryptMessage(room.key, { nickname, message: messageText, timestampUtc: new Date().toISOString(), messageId: id });
         const response = await fetch(`/api/room?hash=${encodeURIComponent(room.roomHash)}`, { method: "POST", credentials: "omit", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ v: 1, id, ...encrypted }) });
         if (!response.ok) throw new Error("send failed");
         input.value = ""; await poll();
-      } catch { showError(error, ACMTNI18n.t("sendError")); }
+      } catch { showError(error, "Message could not be sent. Try again."); }
       finally { button.disabled = false; input.focus(); }
-    });
+    };
+    document.getElementById("send-message").onclick = sendMessage;
+    document.getElementById("message").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendMessage(); } });
     addEventListener("pagehide", () => { if (pollTimer) clearInterval(pollTimer); });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initialiseRoom, { once: true });
