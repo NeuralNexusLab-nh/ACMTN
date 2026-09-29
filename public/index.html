@@ -37,15 +37,15 @@
             <h2 id="join-title" data-i18n="joinTitle">Create or join a confidential room</h2>
             <p data-i18n="joinCopy">Enter a new PIN to create a room, then share the exact PIN with the people you invite.</p>
           </div>
-          <form id="join-form" novalidate>
+          <div id="join-form" role="group" aria-label="Room entry">
             <label for="room-pin" data-i18n="pinLabel">Room PIN</label>
             <div class="pin-row">
               <input id="room-pin" type="password" inputmode="text" maxlength="255" autocomplete="off" spellcheck="false" required data-i18n-placeholder="pinPlaceholder" placeholder="Enter a room PIN">
-              <button class="primary-button" type="submit" data-i18n="enterRoom">Enter room</button>
+              <button id="enter-room" class="primary-button" type="button" data-i18n="enterRoom">Enter room</button>
             </div>
             <p class="form-note" data-i18n="pinHelp">ASCII characters only, up to 255 characters. Your PIN never leaves this browser.</p>
             <p id="join-error" class="form-error" role="alert" hidden></p>
-          </form>
+          </div>
         </div>
       </section>
 

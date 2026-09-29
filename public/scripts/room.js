@@ -52,18 +52,19 @@
     document.getElementById("nickname").focus();
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
+  function initialiseRoom() {
     const expectedHash = roomHashFromUrl();
     if (!ROOM_HASH_PATTERN.test(expectedHash)) { location.replace("/404.html"); return; }
-    const gateForm = document.getElementById("gate-form"); const gatePin = document.getElementById("gate-pin"); const gateError = document.getElementById("gate-error");
+    const gateForm = document.getElementById("gate-form"); const gatePin = document.getElementById("gate-pin"); const gateError = document.getElementById("gate-error"); const gateButton = document.getElementById("gate-enter");
     const entryPin = sessionStorage.getItem("acmtn:entry-pin"); sessionStorage.removeItem("acmtn:entry-pin");
-    if (entryPin) { gatePin.value = entryPin; gateForm.requestSubmit(); }
-    gateForm.addEventListener("submit", async (event) => {
-      event.preventDefault(); clearError(gateError);
-      const button = gateForm.querySelector("button"); const original = button.textContent; button.disabled = true; button.textContent = ACMTNI18n.t("deriving", "Preparing secure room…");
+    const enterRoom = async () => {
+      clearError(gateError); const original = gateButton.textContent; gateButton.disabled = true; gateButton.textContent = ACMTNI18n.t("deriving", "Preparing secure room…");
       try { await openRoom(gatePin.value); gatePin.value = ""; }
-      catch (error) { showError(gateError, error.message === "wrong_room" ? ACMTNI18n.t("wrongPin") : ACMTNI18n.t("invalidPin")); button.disabled = false; button.textContent = original; }
-    });
+      catch (error) { showError(gateError, error.message === "wrong_room" ? ACMTNI18n.t("wrongPin") : ACMTNI18n.t("invalidPin")); gateButton.disabled = false; gateButton.textContent = original; }
+    };
+    gateButton.onclick = enterRoom;
+    gatePin.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); enterRoom(); } });
+    if (entryPin) { gatePin.value = entryPin; enterRoom(); }
     document.getElementById("nickname-form").addEventListener("submit", (event) => {
       event.preventDefault(); const input = document.getElementById("nickname"); const error = document.getElementById("nickname-error"); clearError(error);
       if (!ACMTNCrypto.isValidNickname(input.value)) { showError(error, ACMTNI18n.t("invalidNickname")); return; }
@@ -84,5 +85,7 @@
       finally { button.disabled = false; input.focus(); }
     });
     addEventListener("pagehide", () => { if (pollTimer) clearInterval(pollTimer); });
-  });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initialiseRoom, { once: true });
+  else initialiseRoom();
 })();

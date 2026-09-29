@@ -105,7 +105,11 @@ if (require.main === module) {
   const { app } = createApp();
   const port = Number.parseInt(process.env.PORT || "3000", 10);
   app.listen(port, "0.0.0.0", () => {
-    console.info(`ACMTN listening on http://127.0.0.1:${port}`);
+<<<<<<< HEAD
+    console.info(`ACMTN listening on port ${port}`);
+=======
+    console.info(`ACMTN listening on port ${port}`);
+>>>>>>> 0d5e024 (Fix room entry controls and container listener)
   });
 }
 
