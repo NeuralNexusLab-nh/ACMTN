@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="ACMTN — ephemeral encrypted conversations.">
+    <meta name="referrer" content="no-referrer">
+    <title>ACMTN — Confidential message transfer</title>
+    <link rel="icon" href="/assets/icons/acmtn-mark.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/assets/css/tokens.css">
+    <link rel="stylesheet" href="/assets/css/app.css">
+    <script src="/scripts/i18n.js" defer></script>
+    <script src="/scripts/crypto.js" defer></script>
+    <script src="/scripts/app.js" defer></script>
+  </head>
+  <body data-page="home">
+    <header class="navbar shell">
+      <a class="brand" href="/" aria-label="ACMTN home"><img src="/assets/icons/acmtn-mark.svg" alt=""><span>ACMTN</span></a>
+      <div class="nav-actions">
+        <button class="theme-button" type="button" data-theme-toggle data-i18n-aria="themeLabel">Theme</button>
+        <label class="locale-control"><span class="sr-only" data-i18n="languageLabel">Language</span><select data-locale aria-label="Language"></select></label>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero shell">
+        <div class="eyebrow" data-i18n="heroEyebrow">Private relay · No accounts</div>
+        <h1>ACMTN</h1>
+        <p class="full-name" data-i18n="fullName">Advanced Confidential Message Transfer Network</p>
+        <p class="hero-copy" data-i18n="heroCopy">Ephemeral encrypted conversations. No accounts. No message history.</p>
+      </section>
+
+      <section class="join-section shell" aria-labelledby="join-title">
+        <div class="join-card">
+          <div>
+            <p class="section-kicker" data-i18n="joinKicker">Private entry</p>
+            <h2 id="join-title" data-i18n="joinTitle">Create or join a confidential room</h2>
+            <p data-i18n="joinCopy">Enter a new PIN to create a room, then share the exact PIN with the people you invite.</p>
+          </div>
+          <form id="join-form" novalidate>
+            <label for="room-pin" data-i18n="pinLabel">Room PIN</label>
+            <div class="pin-row">
+              <input id="room-pin" type="password" inputmode="text" maxlength="255" autocomplete="off" spellcheck="false" required data-i18n-placeholder="pinPlaceholder" placeholder="Enter a room PIN">
+              <button class="primary-button" type="submit" data-i18n="enterRoom">Enter room</button>
+            </div>
+            <p class="form-note" data-i18n="pinHelp">ASCII characters only, up to 255 characters. Your PIN never leaves this browser.</p>
+            <p id="join-error" class="form-error" role="alert" hidden></p>
+          </form>
+        </div>
+      </section>
+
+      <section class="shell content-section" aria-labelledby="why-title">
+        <p class="section-kicker" data-i18n="whyKicker">Privacy by design</p>
+        <h2 id="why-title" data-i18n="whyTitle">Why ACMTN?</h2>
+        <p class="lead" data-i18n="whyLead">ACMTN is a short-lived relay for conversations that should not become a permanent record.</p>
+        <div class="feature-grid">
+          <article class="feature-card"><h3 data-i18n="featureOneTitle">No accounts</h3><p data-i18n="featureOneCopy">Choose a nickname. No email, phone number, profile, or identity check is required.</p></article>
+          <article class="feature-card"><h3 data-i18n="featureTwoTitle">Ciphertext only</h3><p data-i18n="featureTwoCopy">Messages are encrypted in your browser before transfer. The relay cannot read them.</p></article>
+          <article class="feature-card"><h3 data-i18n="featureThreeTitle">Short memory</h3><p data-i18n="featureThreeCopy">Encrypted messages live only in RAM for up to 15 seconds, then are discarded.</p></article>
+        </div>
+        <p class="security-note" data-i18n="securityNote">Your privacy depends on keeping a strong, unique room PIN secret. Anyone with that PIN can join the room.</p>
+      </section>
+
+      <section class="shell content-section how-section" aria-labelledby="how-title">
+        <p class="section-kicker" data-i18n="howKicker">The flow</p>
+        <h2 id="how-title" data-i18n="howTitle">How does it work?</h2>
+        <ol class="steps">
+          <li><span>01</span><div><h3 data-i18n="stepOneTitle">Choose a room PIN</h3><p data-i18n="stepOneCopy">A new PIN creates a room; a shared PIN joins one. The PIN is never sent to the server.</p></div></li>
+          <li><span>02</span><div><h3 data-i18n="stepTwoTitle">Derive secrets locally</h3><p data-i18n="stepTwoCopy">Your browser derives a room lookup hash and a separate message encryption key from the PIN.</p></div></li>
+          <li><span>03</span><div><h3 data-i18n="stepThreeTitle">Encrypt before transfer</h3><p data-i18n="stepThreeCopy">Nickname, message, UTC time, and message ID are encrypted together in your browser.</p></div></li>
+          <li><span>04</span><div><h3 data-i18n="stepFourTitle">Relay, decrypt, discard</h3><p data-i18n="stepFourCopy">The service relays ciphertext from RAM for 15 seconds. Participants decrypt it locally; expired messages are gone.</p></div></li>
+        </ol>
+        <div class="protocol-card" aria-labelledby="protocol-title">
+          <p class="section-kicker">Protocol trace</p>
+          <h3 id="protocol-title">What moves, what stays, and what disappears</h3>
+          <ol class="protocol-list">
+            <li><strong>Only in your browser</strong><p>You enter an ASCII PIN. Your browser applies a slow PIN derivation step, then makes two different values: a room lookup hash and a private AES-256-GCM message key. The PIN and message key are never sent.</p></li>
+            <li><strong>Address and request</strong><p>The browser opens <code>/room?hash=…</code> and later calls the room API with the lookup hash. This hash identifies a temporary relay bucket; it is not the PIN and cannot decrypt messages.</p></li>
+            <li><strong>Before a message leaves</strong><p>Your nickname, message text, UTC timestamp, random message ID, and protocol version are serialized together. The browser encrypts that payload with AES-GCM and a fresh 96-bit random nonce.</p></li>
+            <li><strong>What the server receives</strong><p>The server receives only version, message ID, nonce, and ciphertext. It hashes the lookup hash once more for its RAM map key. It cannot turn that data back into a nickname or message.</p></li>
+            <li><strong>15-second RAM relay</strong><p>The server holds the encrypted envelope with an expiry time in RAM only. A GET request returns active envelopes. No message body is written to a database, backup, cookie, or chat log; expired envelopes are removed from memory.</p></li>
+            <li><strong>Only participants can read</strong><p>A browser with the same PIN derives the same AES key, verifies each ciphertext, decrypts it locally, rejects duplicates by message ID, and orders valid messages by UTC time. Refreshing clears the visible conversation and requires the PIN again.</p></li>
+          </ol>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer shell">
+      <p>© <span id="year"></span> ACMTN · <span data-i18n="license">Apache-2.0 licensed</span></p>
+      <nav aria-label="ACMTN links">
+        <a href="https://github.com/NeuralNexusLab-nh/ACMTN" rel="noopener noreferrer" target="_blank">GitHub</a>
+        <a href="https://acmtn.nxlabtw.com">acmtn.nxlabtw.com</a>
+        <a href="http://acmtn.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion/" data-i18n="torAccess">Tor access</a>
+      </nav>
+    </footer>
+  </body>
+</html>
