@@ -104,7 +104,7 @@ function createApp({ messageTtlMs = 15_000, cleanupIntervalMs = 1_000 } = {}) {
 if (require.main === module) {
   const { app } = createApp();
   const port = Number.parseInt(process.env.PORT || "3000", 10);
-  app.listen(port, "127.0.0.1", () => {
+  app.listen(port, "0.0.0.0", () => {
     console.info(`ACMTN listening on http://127.0.0.1:${port}`);
   });
 }
