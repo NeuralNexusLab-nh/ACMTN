@@ -4,6 +4,7 @@
   let room;
   let nickname = "";
   const seen = new Set();
+  const ownMessageIds = new Set();
   let pollTimer;
 
   function showError(element, message) { element.textContent = message; element.hidden = false; }
@@ -12,7 +13,7 @@
 
   function addMessage(payload) {
     const messages = document.getElementById("messages");
-    const message = document.createElement("article"); message.className = "message";
+    const message = document.createElement("article"); message.className = `message${ownMessageIds.has(payload.messageId) ? " message-own" : ""}`;
     const meta = document.createElement("div"); meta.className = "message-meta";
     const name = document.createElement("span"); name.className = "message-name"; name.textContent = payload.nickname;
     const time = document.createElement("time"); time.dateTime = payload.timestampUtc; time.textContent = new Date(payload.timestampUtc).toISOString().replace("T", " ").replace(".000Z", " UTC");
@@ -79,6 +80,7 @@
       button.disabled = true;
       try {
         const id = ACMTNCrypto.randomId();
+        ownMessageIds.add(id);
         const encrypted = await ACMTNCrypto.encryptMessage(room.key, { nickname, message: messageText, timestampUtc: new Date().toISOString(), messageId: id });
         const response = await fetch(`/api/room?hash=${encodeURIComponent(room.roomHash)}`, { method: "POST", credentials: "omit", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ v: 1, id, ...encrypted }) });
         if (!response.ok) throw new Error("send failed");
