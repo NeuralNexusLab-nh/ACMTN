@@ -23,11 +23,14 @@ Open `http://127.0.0.1:3000`. Run tests with `npm test`.
 
 ## Deployment
 
-Run Express behind a TLS-terminating reverse proxy for `https://acmtn.nxlabtw.com`. Configure the Tor onion service to forward to the same local service. Do not enable request-body logging, analytics, a CDN that injects scripts, or persistent process snapshots. Set `PORT` if the reverse proxy uses a non-default local port.
+Run Express behind a TLS-terminating reverse proxy for `https://neutron.nxlabtw.com`. Configure the Tor onion service to forward to the same local service. Do not enable request-body logging, analytics, a CDN that injects scripts, or persistent process snapshots. Set `PORT` if the reverse proxy uses a non-default local port.
 
-Primary access: `https://acmtn.nxlabtw.com`  
-Tor access: `http://acmtn.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion/`
+Primary access: `https://neutron.nxlabtw.com`  
+Tor access: `http://neutron.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion/`
+
+Legacy access remains available at `https://acmtn.nxlabtw.com` and `http://acmtn.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion/`. Keep both legacy hosts routed to this same service; Neutron hosts are the primary addresses.
 
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
+

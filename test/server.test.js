@@ -41,14 +41,15 @@ test("sets anti-cache and browser-isolation headers", async () => withServer({},
   assert.equal(response.headers.get("referrer-policy"), "no-referrer");
   assert.match(response.headers.get("cache-control"), /no-store/);
   assert.equal(response.headers.get("x-frame-options"), "DENY");
-  assert.equal(response.headers.get("onion-location"), "http://acmtn.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion/");
+  assert.equal(response.headers.get("onion-location"), "http://neutron.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion/");
 }));
 
 test("does not advertise an onion address while serving the onion host", async () => withServer({}, async (origin) => {
   const response = await new Promise((resolve, reject) => {
-    const request = http.get(`${origin}/room?hash=${validHash}`, { headers: { Host: "acmtn.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion" } }, resolve);
+    const request = http.get(`${origin}/room?hash=${validHash}`, { headers: { Host: "neutron.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion" } }, resolve);
     request.on("error", reject);
   });
   response.resume();
   assert.equal(response.headers["onion-location"], undefined);
 }));
+

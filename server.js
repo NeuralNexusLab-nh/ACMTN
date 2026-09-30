@@ -5,7 +5,7 @@ const express = require("express");
 const path = require("node:path");
 
 const PUBLIC_DIRECTORY = path.join(__dirname, "public");
-const ONION_ORIGIN = "http://acmtn.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion";
+const ONION_ORIGIN = "http://neutron.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion";
 const ROOM_HASH_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const MESSAGE_ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 const NONCE_PATTERN = /^[A-Za-z0-9_-]{16}$/;
@@ -110,3 +110,4 @@ if (require.main === module) {
 }
 
 module.exports = { createApp, doubleHash, isValidRoomHash };
+
