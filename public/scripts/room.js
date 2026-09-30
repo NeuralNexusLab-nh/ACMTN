@@ -37,8 +37,10 @@
   }
 
   function startChat() {
+    if (!room || !nickname || pollTimer) return;
     document.getElementById("nickname-panel").hidden = true;
     document.getElementById("chat-panel").hidden = false;
+    document.getElementById("message").focus();
     poll(); pollTimer = setInterval(poll, 3000);
   }
 
@@ -59,6 +61,7 @@
     const gatePin = document.getElementById("gate-pin"); const gateError = document.getElementById("gate-error"); const gateButton = document.getElementById("gate-enter");
     const entryPin = sessionStorage.getItem("acmtn:entry-pin"); sessionStorage.removeItem("acmtn:entry-pin");
     const enterRoom = async () => {
+      if (gateButton.disabled) return;
       clearError(gateError); const original = gateButton.textContent; gateButton.disabled = true; gateButton.textContent = "Preparing…";
       try { await openRoom(gatePin.value); gatePin.value = ""; }
       catch (error) { showError(gateError, error.message === "wrong_room" ? "This PIN does not match this room." : "Use 1–255 ASCII characters."); gateButton.disabled = false; gateButton.textContent = original; }
@@ -66,7 +69,9 @@
     gateButton.onclick = enterRoom;
     gatePin.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); enterRoom(); } });
     if (entryPin) { gatePin.value = entryPin; enterRoom(); }
+    else gatePin.focus();
     const chooseNickname = () => {
+      if (!room) return;
       const input = document.getElementById("nickname"); const error = document.getElementById("nickname-error"); clearError(error);
       if (!ACMTNCrypto.isValidNickname(input.value)) { showError(error, "Use a name of up to 255 characters."); return; }
       nickname = input.value.trim(); input.value = ""; startChat();
@@ -74,6 +79,7 @@
     document.getElementById("start-chat").onclick = chooseNickname;
     document.getElementById("nickname").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); chooseNickname(); } });
     const sendMessage = async () => {
+      if (!room || !nickname) return;
       const input = document.getElementById("message"); const error = document.getElementById("message-error"); const button = document.getElementById("send-message"); clearError(error);
       const messageText = input.value;
       if (!messageText.trim() || Array.from(messageText).length > 4000) { showError(error, "Write a message of up to 4,000 characters."); return; }
