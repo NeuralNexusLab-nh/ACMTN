@@ -15,6 +15,15 @@ function doubleHash(roomHash) {
   return crypto.createHash("sha256").update(roomHash, "utf8").digest("base64url");
 }
 
+function alternateAddress(hostname, remoteAddress) {
+  const host = String(hostname || "").toLowerCase();
+  const onion = host.endsWith(".onion") || ["127.0.0.1", "::ffff:127.0.0.1", "::1"].includes(remoteAddress);
+  const brand = host.startsWith("neutron.") ? "acmtn" : "neutron";
+  return onion
+    ? `http://${brand}.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion/`
+    : `https://${brand}.nxlabtw.com/`;
+}
+
 function isValidRoomHash(value) {
   return typeof value === "string" && ROOM_HASH_PATTERN.test(value);
 }
@@ -50,6 +59,10 @@ function createApp({ messageTtlMs = 15_000, cleanupIntervalMs = 1_000 } = {}) {
     next();
   });
   app.use(express.json({ limit: "20kb", strict: true, type: "application/json" }));
+
+  app.get("/api/site", (request, response) => response.json({
+    alternateAddress: alternateAddress(request.hostname, request.socket.remoteAddress)
+  }));
 
   app.get("/", (_request, response) => response.sendFile(path.join(PUBLIC_DIRECTORY, "index.html")));
   app.get("/room", (request, response) => {
@@ -109,5 +122,5 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createApp, doubleHash, isValidRoomHash };
+module.exports = { createApp, doubleHash, isValidRoomHash, alternateAddress };
 

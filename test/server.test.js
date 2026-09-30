@@ -6,6 +6,26 @@ const test = require("node:test");
 const { createApp } = require("../server");
 
 const validHash = "A".repeat(43);
+const { alternateAddress } = require("../server");
+
+test("alternate address switches brands and keeps onion connections on onion", () => {
+  assert.equal(alternateAddress("neutron.nxlabtw.com", "203.0.113.10"), "https://acmtn.nxlabtw.com/");
+  assert.equal(alternateAddress("acmtn.nxlabtw.com", "203.0.113.10"), "https://neutron.nxlabtw.com/");
+  const suffix = "nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion";
+  assert.equal(alternateAddress(`neutron.${suffix}`, "203.0.113.10"), `http://acmtn.${suffix}/`);
+  assert.equal(alternateAddress(`acmtn.${suffix}`, "203.0.113.10"), `http://neutron.${suffix}/`);
+  for (const ip of ["127.0.0.1", "::ffff:127.0.0.1", "::1"]) {
+    assert.equal(alternateAddress("neutron.nxlabtw.com", ip), `http://acmtn.${suffix}/`);
+  }
+});
+
+test("site API returns an alternate address without revealing the source IP", async () => withServer({}, async (origin) => {
+  const response = await fetch(`${origin}/api/site`);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    alternateAddress: "http://neutron.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion/"
+  });
+}));
 const validMessage = { v: 1, id: "a".repeat(22), nonce: "b".repeat(16), ciphertext: "c".repeat(24) };
 
 async function withServer(options, run) {
