@@ -59,12 +59,13 @@
     const expectedHash = roomHashFromUrl();
     if (!ROOM_HASH_PATTERN.test(expectedHash)) { location.replace("/404.html"); return; }
     const gatePin = document.getElementById("gate-pin"); const gateError = document.getElementById("gate-error"); const gateButton = document.getElementById("gate-enter");
-    const entryPin = sessionStorage.getItem("acmtn:entry-pin"); sessionStorage.removeItem("acmtn:entry-pin");
+    let entryPin = null;
+    try { entryPin = sessionStorage.getItem("acmtn:entry-pin"); sessionStorage.removeItem("acmtn:entry-pin"); } catch {}
     const enterRoom = async () => {
       if (gateButton.disabled) return;
       clearError(gateError); const original = gateButton.textContent; gateButton.disabled = true; gateButton.textContent = "Preparing…";
       try { await openRoom(gatePin.value); gatePin.value = ""; }
-      catch (error) { showError(gateError, error.message === "wrong_room" ? "This PIN does not match this room." : "Use 1–255 ASCII characters."); gateButton.disabled = false; gateButton.textContent = original; }
+      catch (error) { showError(gateError, error.message === "wrong_room" ? "This PIN does not match this room." : error.message === "invalid_pin" ? "Use 1–255 ASCII characters." : "Unable to unlock this room. Check that browser encryption is available and try again."); gateButton.disabled = false; gateButton.textContent = original; }
     };
     gateButton.onclick = enterRoom;
     gatePin.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); enterRoom(); } });
@@ -73,7 +74,7 @@
     const chooseNickname = () => {
       if (!room) return;
       const input = document.getElementById("nickname"); const error = document.getElementById("nickname-error"); clearError(error);
-      if (!ACMTNCrypto.isValidNickname(input.value)) { showError(error, "Use a name of up to 255 characters."); return; }
+      if (!ACMTNCrypto.isValidNickname(input.value)) { showError(error, "Use a nickname of up to 255 characters."); return; }
       nickname = input.value.trim(); input.value = ""; startChat();
     };
     document.getElementById("start-chat").onclick = chooseNickname;
@@ -101,3 +102,4 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initialiseRoom, { once: true });
   else initialiseRoom();
 })();
+

@@ -7,7 +7,7 @@ const vm = require("node:vm");
 const test = require("node:test");
 const { webcrypto } = require("node:crypto");
 
-function roomPage(hash, entryPin) {
+function roomPage(hash, entryPin, storageDenied = false) {
   const elements = new Map();
   const get = (id) => {
     if (!elements.has(id)) elements.set(id, {
@@ -23,7 +23,7 @@ function roomPage(hash, entryPin) {
     window: {}, crypto: webcrypto, TextEncoder, TextDecoder, Uint8Array,
     btoa, atob, URLSearchParams,
     location: { search: `?hash=${hash}`, replace() { throw new Error("unexpected redirect"); } },
-    sessionStorage: { getItem() { return storedPin; }, removeItem() { storedPin = null; } },
+    sessionStorage: { getItem() { if (storageDenied) throw new Error("Storage disabled"); return storedPin; }, removeItem() { storedPin = null; } },
     document: { readyState: "complete", getElementById: get },
     addEventListener() {}, setInterval() { return 1; }, clearInterval() {},
     fetch: async () => { requests++; return { ok: true, json: async () => ({ messages: [] }) }; }
@@ -72,6 +72,16 @@ test("home PIN handoff opens the nickname stage and consumes the stored PIN", as
   assert.equal(page.get("chat").hidden, false);
   assert.equal(page.get("chat-panel").hidden, true);
   assert.equal(page.requests(), 0);
+});
+
+test("room PIN gate works when browser storage is blocked", async () => {
+  const page = roomPage("A".repeat(43), null, true);
+  const { roomHash } = await page.context.ACMTNCrypto.deriveRoom("private-pin");
+  page.context.location.search = `?hash=${roomHash}`;
+  page.get("gate-pin").value = "private-pin";
+  await page.get("gate-enter").onclick();
+  assert.equal(page.get("chat").hidden, false);
+  assert.equal(page.get("chat-panel").hidden, true);
 });
 
 test("hidden panels override component display styles before JavaScript runs", () => {
