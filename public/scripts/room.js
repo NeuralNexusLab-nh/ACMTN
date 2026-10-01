@@ -41,7 +41,7 @@
     document.getElementById("nickname-panel").hidden = true;
     document.getElementById("chat-panel").hidden = false;
     document.getElementById("message").focus();
-    poll(); pollTimer = setInterval(poll, 3000);
+    poll(); pollTimer = setInterval(poll, 2000);
   }
 
   async function openRoom(pin) {
