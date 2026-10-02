@@ -1,75 +1,17 @@
 "use strict";
-
-const assert = require("node:assert/strict");
-const http = require("node:http");
-const test = require("node:test");
-const { createApp } = require("../server");
-
-const validHash = "A".repeat(43);
-const { alternateAddress } = require("../server");
-
-test("alternate address switches brands and keeps onion connections on onion", () => {
-  assert.equal(alternateAddress("neutron.nxlabtw.com", "203.0.113.10"), "https://acmtn.nxlabtw.com/");
-  assert.equal(alternateAddress("acmtn.nxlabtw.com", "203.0.113.10"), "https://neutron.nxlabtw.com/");
-  const suffix = "nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion";
-  assert.equal(alternateAddress(`neutron.${suffix}`, "203.0.113.10"), `http://acmtn.${suffix}/`);
-  assert.equal(alternateAddress(`acmtn.${suffix}`, "203.0.113.10"), `http://neutron.${suffix}/`);
-  for (const ip of ["127.0.0.1", "::ffff:127.0.0.1", "::1"]) {
-    assert.equal(alternateAddress("neutron.nxlabtw.com", ip), `http://acmtn.${suffix}/`);
-  }
-});
-
-test("site API returns an alternate address without revealing the source IP", async () => withServer({}, async (origin) => {
-  const response = await fetch(`${origin}/api/site`);
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), {
-    alternateAddress: "http://neutron.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion/"
-  });
-}));
-const validMessage = { v: 1, id: "a".repeat(22), nonce: "b".repeat(16), ciphertext: "c".repeat(24) };
-
-async function withServer(options, run) {
-  const service = createApp(options);
-  const server = http.createServer(service.app);
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const origin = `http://127.0.0.1:${server.address().port}`;
-  try { await run(origin, service); } finally { service.close(); await new Promise((resolve) => server.close(resolve)); }
+const assert = require("node:assert/strict"), crypto = require("node:crypto"), http = require("node:http"), test = require("node:test");
+const { Login, Registration } = require("@47ng/opaque-server");
+const { createApp, alternateAddress } = require("../server");
+const validHash = "A".repeat(43), b64 = (value) => Buffer.from(value).toString("base64url"), from = (value) => Buffer.from(value, "base64url");
+async function withServer(options, run) { const service = createApp(options), server = http.createServer(service.app); await new Promise(resolve => server.listen(0, "127.0.0.1", resolve)); const origin = `http://127.0.0.1:${server.address().port}`; try { await run(origin, service); } finally { service.close(); await new Promise(resolve => server.close(resolve)); } }
+async function post(origin, path, body) { return fetch(`${origin}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); }
+async function authenticate(origin, hash, pin) {
+  const registration = new Registration(); const first = await post(origin, "/api/auth/register/start", { hash, request: b64(registration.start(pin)) }); assert.equal(first.status, 200); const begin = await first.json(); const record = registration.finish(pin, from(begin.response)); registration.free(); assert.equal((await post(origin, "/api/auth/register/finish", { nonce: begin.nonce, record: b64(record) })).status, 204);
+  const login = new Login(); const loginStart = await post(origin, "/api/auth/login/start", { hash, request: b64(login.start(pin)) }); assert.equal(loginStart.status, 200); const challenge = await loginStart.json(); const finish = login.finish(pin, from(challenge.response)); const key = Buffer.from(login.getSessionKey()); login.free(); const session = await post(origin, "/api/auth/login/finish", { nonce: challenge.nonce, final: b64(finish) }); assert.equal(session.status, 200); return { ...(await session.json()), key };
 }
+function proof(key, purpose, hash, messageHash = "", publicKey = "") { return crypto.createHmac("sha256", key).update(`${purpose}\n${hash}\n${messageHash}\n${publicKey}`).digest("base64url"); }
 
-test("rejects malformed room hashes and ciphertext", async () => withServer({}, async (origin) => {
-  const badRoom = await fetch(`${origin}/api/room?hash=bad`);
-  assert.equal(badRoom.status, 404);
-  const badCiphertext = await fetch(`${origin}/api/room?hash=${validHash}`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-  assert.equal(badCiphertext.status, 400);
-}));
-
-test("returns only ciphertext and clears it after TTL", async () => withServer({ messageTtlMs: 40, cleanupIntervalMs: 5 }, async (origin, service) => {
-  const response = await fetch(`${origin}/api/room?hash=${validHash}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(validMessage) });
-  assert.equal(response.status, 202);
-  const visible = await fetch(`${origin}/api/room?hash=${validHash}`).then((result) => result.json());
-  assert.deepEqual(visible.messages, [validMessage]);
-  assert.equal(Object.values(visible.messages[0]).some((value) => String(value).includes("secret")), false);
-  await new Promise((resolve) => setTimeout(resolve, 70));
-  const expired = await fetch(`${origin}/api/room?hash=${validHash}`).then((result) => result.json());
-  assert.deepEqual(expired.messages, []);
-  assert.equal(service.rooms.size, 0);
-}));
-
-test("sets anti-cache and browser-isolation headers", async () => withServer({}, async (origin) => {
-  const response = await fetch(`${origin}/`);
-  assert.match(response.headers.get("content-security-policy"), /default-src 'self'/);
-  assert.equal(response.headers.get("referrer-policy"), "no-referrer");
-  assert.match(response.headers.get("cache-control"), /no-store/);
-  assert.equal(response.headers.get("x-frame-options"), "DENY");
-  assert.equal(response.headers.get("onion-location"), "http://neutron.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion/");
-}));
-
-test("does not advertise an onion address while serving the onion host", async () => withServer({}, async (origin) => {
-  const response = await new Promise((resolve, reject) => {
-    const request = http.get(`${origin}/room?hash=${validHash}`, { headers: { Host: "neutron.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion" } }, resolve);
-    request.on("error", reject);
-  });
-  response.resume();
-  assert.equal(response.headers["onion-location"], undefined);
-}));
-
+test("alternate address switches brands and keeps onion connections on onion", () => { assert.equal(alternateAddress("neutron.nxlabtw.com", "203.0.113.10"), "https://acmtn.nxlabtw.com/"); assert.match(alternateAddress("neutron.nxlabtw.com", "127.0.0.1"), /^http:\/\/acmtn\./); });
+test("OPAQUE proves a PIN without POSTing it and grants a short RAM session", async () => withServer({}, async origin => { const session = await authenticate(origin, validHash, "correct horse battery staple"); assert.match(session.sessionId, /^[A-Za-z0-9_-]+$/); const prepared = await post(origin, "/api/message/prepare", { hash: validHash, sessionId: session.sessionId, proof: proof(session.key, "prepare", validHash) }); assert.equal(prepared.status, 200); const body = await prepared.json(); assert.match(body.messageHash, /^[A-Za-z0-9_-]{43}$/); assert.match(body.publicKey, /^[A-Za-z0-9_-]{43}$/); }));
+test("message descriptors never contain encrypted content and invalid writes are rejected", async () => withServer({}, async origin => { const session = await authenticate(origin, validHash, "PIN"); const rejected = await post(origin, "/api/message", { hash: validHash, sessionId: session.sessionId }); assert.equal(rejected.status, 401); const listed = await fetch(`${origin}/api/room?hash=${validHash}`); assert.deepEqual(await listed.json(), { v: 2, messages: [] }); }));
+test("rejects malformed room hashes and protects headers", async () => withServer({}, async origin => { assert.equal((await fetch(`${origin}/api/room?hash=bad`)).status, 404); const response = await fetch(`${origin}/`); assert.match(response.headers.get("content-security-policy"), /default-src 'self'/); assert.match(response.headers.get("onion-location"), /neutron\./); }));

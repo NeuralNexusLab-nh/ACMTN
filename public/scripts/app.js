@@ -1,3 +1,5 @@
+import "/scripts/crypto.js";
+await window.ACMTNCryptoReady;
 (() => {
   "use strict";
   function initialiseHome() {

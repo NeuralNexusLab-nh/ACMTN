@@ -1,70 +1,41 @@
-(() => {
-  "use strict";
-  const textEncoder = new TextEncoder();
-  const textDecoder = new TextDecoder();
-  const KDF_ITERATIONS = 600_000;
-  const KDF_SALT = textEncoder.encode("ACMTN/PIN/v1");
-  const AAD = textEncoder.encode("ACMTN/message/v1");
+import initialiseOpaque, { Login, Registration } from "/vendor/opaque/opaque-client.js";
 
-  function toBase64Url(bytes) {
-    let binary = "";
-    for (const byte of bytes) binary += String.fromCharCode(byte);
-    return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
-  }
+const encoder = new TextEncoder(), decoder = new TextDecoder(), salt = encoder.encode("NEUTRON/room-root/v2"), log = (event, detail) => console.info(`[${event}]`, detail);
+function toBase64Url(bytes) { let binary = ""; for (const byte of bytes) binary += String.fromCharCode(byte); return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", ""); }
+function fromBase64Url(value) { return Uint8Array.from(atob(value.replaceAll("-", "+").replaceAll("_", "/") + "=".repeat((4 - value.length % 4) % 4)), c => c.charCodeAt(0)); }
+function randomBytes(length) { const value = new Uint8Array(length); crypto.getRandomValues(value); return value; }
+function isAsciiPin(pin) { return typeof pin === "string" && pin.length > 0 && pin.length <= 255 && /^[\x00-\x7F]+$/.test(pin); }
+function isValidNickname(nickname) { return typeof nickname === "string" && Array.from(nickname.trim()).length > 0 && Array.from(nickname).length <= 255; }
+async function sha256(value) { return new Uint8Array(await crypto.subtle.digest("SHA-256", value)); }
+async function request(url, options = {}) { const response = await fetch(url, { credentials: "omit", cache: "no-store", ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } }); let body; try { body = await response.json(); } catch {} return { response, body }; }
+async function hmac(sessionKey, purpose, roomHash, messageHash = "", publicKey = "") { const key = await crypto.subtle.importKey("raw", sessionKey, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]); return toBase64Url(new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(`${purpose}\n${roomHash}\n${messageHash}\n${publicKey}`)))); }
+async function deriveRoom(pin) {
+  if (!isAsciiPin(pin)) throw new Error("invalid_pin"); log("crypto", { action: "Deriving room root", algorithm: "PBKDF2-SHA-256", keyOrigin: "PIN" });
+  const input = await crypto.subtle.importKey("raw", encoder.encode(pin), "PBKDF2", false, ["deriveBits"]); const material = new Uint8Array(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: 600000 }, input, 512));
+  const roomHash = toBase64Url(await sha256(new Uint8Array([...encoder.encode("NEUTRON/room-lookup/v2"), ...material.slice(0, 32)]))); const rootKey = await crypto.subtle.importKey("raw", material.slice(32), "HKDF", false, ["deriveKey"]); material.fill(0); return { pin, roomHash, rootKey, sessionId: null, sessionKey: null, signingPublicKey: null };
+}
+async function existingLogin(room) {
+  const login = new Login(); try { const begin = await request("/api/auth/login/start", { method: "POST", body: JSON.stringify({ hash: room.roomHash, request: toBase64Url(login.start(room.pin)) }) }); if (!begin.response.ok || !begin.body) throw new Error("authentication_failed"); const finish = await request("/api/auth/login/finish", { method: "POST", body: JSON.stringify({ nonce: begin.body.nonce, final: toBase64Url(login.finish(room.pin, fromBase64Url(begin.body.response))) }) }); if (!finish.response.ok || !finish.body) throw new Error("authentication_failed"); room.sessionId = finish.body.sessionId; room.sessionKey = new Uint8Array(login.getSessionKey()); log("auth", { action: "OPAQUE session ready", algorithm: "OPAQUE", keyOrigin: "OPAQUE handshake" }); } finally { login.free(); }
+}
+async function opaqueLogin(room) {
+  const registration = new Registration(); const begin = await request("/api/auth/register/start", { method: "POST", body: JSON.stringify({ hash: room.roomHash, request: toBase64Url(registration.start(room.pin)) }) });
+  if (begin.response.status === 409) { registration.free(); return existingLogin(room); }
+  if (!begin.response.ok || !begin.body) { registration.free(); throw new Error("authentication_failed"); }
+  try { const finish = await request("/api/auth/register/finish", { method: "POST", body: JSON.stringify({ nonce: begin.body.nonce, record: toBase64Url(registration.finish(room.pin, fromBase64Url(begin.body.response))) }) }); if (!finish.response.ok) throw new Error("authentication_failed"); log("auth", { action: "OPAQUE credential registered", storage: "RAM only" }); } finally { registration.free(); } return existingLogin(room);
+}
+async function signingKey(room) { if (room.signingPublicKey) return room.signingPublicKey; const { response, body } = await request("/api/crypto/config"); if (!response.ok || !body?.signingPublicKey) throw new Error("crypto_config_failed"); room.signingPublicKey = await crypto.subtle.importKey("raw", fromBase64Url(body.signingPublicKey), { name: "Ed25519" }, false, ["verify"]); log("crypto", { action: "Loaded signing public key", algorithm: "Ed25519", keyOrigin: "server configuration" }); return room.signingPublicKey; }
+async function verifyServerKey(room, purpose, messageHash, createdAt, publicKey, signature) { if (!await crypto.subtle.verify("Ed25519", await signingKey(room), fromBase64Url(signature), encoder.encode(`${purpose}\n${messageHash}\n${createdAt}\n${publicKey}`))) throw new Error("invalid_server_signature"); }
+async function envelopeKey(privateKey, publicKey, messageHash, createdAt, purpose) { const remote = await crypto.subtle.importKey("raw", fromBase64Url(publicKey), { name: "X25519" }, false, []); const shared = await crypto.subtle.deriveBits({ name: "X25519", public: remote }, privateKey, 256); const base = await crypto.subtle.importKey("raw", shared, "HKDF", false, ["deriveKey"]); return crypto.subtle.deriveKey({ name: "HKDF", hash: "SHA-256", salt: await sha256(encoder.encode(`${messageHash}|${createdAt}`)), info: encoder.encode(`neutron/v2/${purpose}`) }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]); }
+async function encryptEnvelope(publicKey, messageHash, createdAt, purpose, payload) { const pair = await crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]), nonce = randomBytes(12), key = await envelopeKey(pair.privateKey, publicKey, messageHash, createdAt, purpose); return { clientPublicKey: toBase64Url(new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey))), nonce: toBase64Url(nonce), ciphertext: toBase64Url(new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce, tagLength: 128 }, key, encoder.encode(JSON.stringify(payload))))) }; }
+async function decryptEnvelope(privateKey, publicKey, messageHash, createdAt, purpose, nonce, ciphertext) { const key = await envelopeKey(privateKey, publicKey, messageHash, createdAt, purpose); return JSON.parse(decoder.decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromBase64Url(nonce), tagLength: 128 }, key, fromBase64Url(ciphertext)))); }
+async function contentKey(room, messageHash, createdAt, layer) { return crypto.subtle.deriveKey({ name: "HKDF", hash: "SHA-256", salt: await sha256(encoder.encode(`${messageHash}|${createdAt}`)), info: encoder.encode(`neutron/v2/content-layer/${layer}`) }, room.rootKey, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]); }
+async function encryptLayers(room, messageHash, createdAt, payload) { let value = encoder.encode(JSON.stringify(payload)); const layers = []; for (let layer = 1; layer <= 3; layer += 1) { const nonce = randomBytes(12); value = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce, tagLength: 128 }, await contentKey(room, messageHash, createdAt, layer), value)); layers.push({ nonce: toBase64Url(nonce), ciphertext: toBase64Url(value) }); } log("crypto", { action: "Encrypted content", algorithm: "AES-256-GCM × 3", keyOrigin: "PIN-derived per-message keys" }); return layers; }
+async function decryptLayers(room, messageHash, createdAt, layers) { if (!Array.isArray(layers) || layers.length !== 3) return null; let value = fromBase64Url(layers[2].ciphertext); try { for (let layer = 3; layer >= 1; layer -= 1) value = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromBase64Url(layers[layer - 1].nonce), tagLength: 128 }, await contentKey(room, messageHash, createdAt, layer), value)); const payload = JSON.parse(decoder.decode(value)); return payload?.messageHash === messageHash ? payload : null; } catch { return null; } }
+async function prepareMessage(room) { const proof = await hmac(room.sessionKey, "prepare", room.roomHash); const { response, body } = await request("/api/message/prepare", { method: "POST", body: JSON.stringify({ hash: room.roomHash, sessionId: room.sessionId, proof }) }); if (!response.ok || !body) throw new Error(response.status === 401 ? "session_expired" : "prepare_failed"); await verifyServerKey(room, "upload", body.messageHash, body.createdAt, body.publicKey, body.signature); log("request", { action: "Received one-time upload public key", algorithm: "X25519" }); return body; }
+async function sendMessage(room, payload) { const prepared = await prepareMessage(room); const layers = await encryptLayers(room, prepared.messageHash, prepared.createdAt, { ...payload, messageHash: prepared.messageHash, timestampUtc: prepared.createdAt }); const outer = await encryptEnvelope(prepared.publicKey, prepared.messageHash, prepared.createdAt, "upload", { v: 2, messageHash: prepared.messageHash, createdAt: prepared.createdAt, layers }); const proof = await hmac(room.sessionKey, "upload", room.roomHash, prepared.messageHash, outer.clientPublicKey); const { response } = await request("/api/message", { method: "POST", body: JSON.stringify({ hash: room.roomHash, sessionId: room.sessionId, proof, messageHash: prepared.messageHash, ...outer }) }); if (!response.ok) throw new Error(response.status === 401 ? "session_expired" : "send_failed"); log("request", { action: "Uploaded encrypted message", encryption: "X25519 envelope + AES-256-GCM × 3" }); return prepared.messageHash; }
+async function claimMessage(room, descriptor) { const pair = await crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]); const clientPublicKey = toBase64Url(new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey))); const proof = await hmac(room.sessionKey, "download", room.roomHash, descriptor.messageHash, clientPublicKey); const { response, body } = await request("/api/message/claim", { method: "POST", body: JSON.stringify({ hash: room.roomHash, sessionId: room.sessionId, proof, messageHash: descriptor.messageHash, clientPublicKey }) }); if (!response.ok || !body) throw new Error(response.status === 401 ? "session_expired" : "claim_failed"); await verifyServerKey(room, "download", body.messageHash, body.createdAt, body.publicKey, body.signature); const wrapped = await decryptEnvelope(pair.privateKey, body.publicKey, body.messageHash, body.createdAt, "download", body.nonce, body.ciphertext); const payload = await decryptLayers(room, wrapped.messageHash, wrapped.createdAt, wrapped.layers); log("crypto", { action: "Decrypted authenticated message", algorithm: "X25519 envelope + AES-256-GCM × 3", keyOrigin: "one-time client key and PIN-derived keys" }); return payload;
+}
 
-  function fromBase64Url(value) {
-    const padded = value.replaceAll("-", "+").replaceAll("_", "/") + "=".repeat((4 - value.length % 4) % 4);
-    const binary = atob(padded);
-    return Uint8Array.from(binary, (character) => character.charCodeAt(0));
-  }
-
-  function isAsciiPin(pin) {
-    return typeof pin === "string" && pin.length > 0 && pin.length <= 255 && /^[\x00-\x7F]+$/.test(pin);
-  }
-
-  function isValidNickname(nickname) {
-    return typeof nickname === "string" && Array.from(nickname.trim()).length > 0 && Array.from(nickname).length <= 255;
-  }
-
-  async function sha256(value) {
-    return new Uint8Array(await crypto.subtle.digest("SHA-256", value));
-  }
-
-  async function deriveRoom(pin) {
-    if (!isAsciiPin(pin)) throw new Error("invalid_pin");
-    const pinKey = await crypto.subtle.importKey("raw", textEncoder.encode(pin), "PBKDF2", false, ["deriveBits"]);
-    const material = new Uint8Array(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: KDF_SALT, iterations: KDF_ITERATIONS }, pinKey, 512));
-    const lookupInput = new Uint8Array(textEncoder.encode("ACMTN/room-lookup/v1").length + 32);
-    lookupInput.set(textEncoder.encode("ACMTN/room-lookup/v1"));
-    lookupInput.set(material.slice(0, 32), textEncoder.encode("ACMTN/room-lookup/v1").length);
-    const roomHash = toBase64Url(await sha256(lookupInput));
-    const key = await crypto.subtle.importKey("raw", material.slice(32, 64), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
-    material.fill(0);
-    return { roomHash, key };
-  }
-
-  function randomBytes(length) {
-    const bytes = new Uint8Array(length);
-    crypto.getRandomValues(bytes);
-    return bytes;
-  }
-
-  async function encryptMessage(key, payload) {
-    const nonce = randomBytes(12);
-    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce, additionalData: AAD, tagLength: 128 }, key, textEncoder.encode(JSON.stringify(payload)));
-    return { nonce: toBase64Url(nonce), ciphertext: toBase64Url(new Uint8Array(ciphertext)) };
-  }
-
-  async function decryptMessage(key, message) {
-    try {
-      const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromBase64Url(message.nonce), additionalData: AAD, tagLength: 128 }, key, fromBase64Url(message.ciphertext));
-      const payload = JSON.parse(textDecoder.decode(plaintext));
-      if (!payload || payload.messageId !== message.id || !isValidNickname(payload.nickname) || typeof payload.message !== "string" || typeof payload.timestampUtc !== "string") return null;
-      return payload;
-    } catch {
-      return null;
-    }
-  }
-
-  window.ACMTNCrypto = { decryptMessage, deriveRoom, encryptMessage, isAsciiPin, isValidNickname, randomId: () => toBase64Url(randomBytes(16)) };
-})();
+await initialiseOpaque();
+window.ACMTNCrypto = { deriveRoom, opaqueLogin, existingLogin, sendMessage, claimMessage, isAsciiPin, isValidNickname };
+window.ACMTNCryptoReady = Promise.resolve();

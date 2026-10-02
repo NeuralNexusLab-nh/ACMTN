@@ -8,12 +8,15 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "generate:secrets": "node scripts/generate-server-secrets.js"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "@47ng/opaque-client": "2.1.5",
+    "@47ng/opaque-server": "2.1.5",
     "express": "^5.1.0"
   }
 }
