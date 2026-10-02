@@ -67,7 +67,7 @@ function verifyProof(session, purpose, hash, messageHash, publicKey, proof) {
 }
 function validLayers(layers) { return Array.isArray(layers) && layers.length === 3 && layers.every((layer) => layer && isEncoded(layer.nonce, 16, 32) && isEncoded(layer.ciphertext, 17, MAX_CIPHERTEXT)); }
 
-function createApp({ messageTtlMs = 15000, authTtlMs = 30000, handshakeTtlMs = 30000, opaqueRecordTtlMs = 3600000, cleanupIntervalMs = 1000 } = {}) {
+function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 30000, opaqueRecordTtlMs = 3600000, cleanupIntervalMs = 1000 } = {}) {
   const app = express(); const rooms = new Map(); const opaqueRecords = new Map(); const registrationStates = new Map(); const loginStates = new Map(); const sessions = new Map(); const preparations = new Map();
   const opaqueSetup = opaqueSetupFromEnvironment(); const signingKey = signingKeyFromEnvironment(); const signingPublicKey = toBase64Url(publicRaw(crypto.createPublicKey(signingKey)));
   app.disable("x-powered-by");
