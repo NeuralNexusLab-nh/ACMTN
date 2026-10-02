@@ -1,0 +1,1 @@
+body[data-page="room"]{opacity:0}body[data-page="room"].room-ready{opacity:1;transition:opacity .16s ease-out}

@@ -3,16 +3,16 @@
   <head>
     <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer">
     <title>Neutron - ACMTN — Room</title><link rel="icon" href="/assets/icons/neutron-mark.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/css/tokens.css"><link rel="stylesheet" href="/assets/css/app.css"><link rel="stylesheet" href="/assets/css/room.css">
+    <link rel="stylesheet" href="/assets/css/tokens.css"><link rel="stylesheet" href="/assets/css/app.css"><link rel="stylesheet" href="/assets/css/room.css"><link rel="stylesheet" href="/assets/css/room-ready.css">
     <script src="/scripts/site.js" defer></script><script type="module" src="/scripts/crypto.js"></script><script type="module" src="/scripts/room.js"></script>
   </head>
   <body data-page="room">
     <header class="navbar shell"><a class="brand" href="/" aria-label="Neutron - ACMTN home"><img src="/assets/icons/neutron-mark.svg" alt=""><span>Neutron - ACMTN</span><span class="onion-badge">Dark Web</span></a></header>
     <main class="shell room-shell">
-      <section id="room-gate" class="room-gate" aria-labelledby="gate-title">
+      <section id="room-gate" class="room-gate" aria-labelledby="gate-title" hidden>
         <h1 id="gate-title">Enter room</h1><div id="gate-form" role="group" aria-label="Room PIN"><label class="sr-only" for="gate-pin">Room PIN</label><input id="gate-pin" type="password" maxlength="255" autocomplete="off" required placeholder="Room PIN"><button id="gate-enter" class="primary-button" type="button">Enter</button><p id="gate-error" class="form-error" role="alert" hidden></p></div>
       </section>
-      <section id="room-loading" class="room-loading" aria-live="polite" hidden><span class="loading-mark" aria-hidden="true"></span><p>Establishing secure room…</p></section>
+      <section id="room-loading" class="room-loading" aria-live="polite"><span class="loading-mark" aria-hidden="true"></span><p>Establishing secure room…</p></section>
       <section id="chat" class="chat" hidden aria-live="polite">
         <div class="chat-header"><a class="leave-link" href="/">Leave</a></div><div id="nickname-panel" class="nickname-panel"><h2>Enter a nickname</h2><div id="nickname-form" role="group" aria-label="Enter a nickname"><label class="sr-only" for="nickname">Nickname</label><input id="nickname" maxlength="255" autocomplete="off" required placeholder="Nickname"><button id="start-chat" class="primary-button" type="button">Enter</button><p id="nickname-error" class="form-error" role="alert" hidden></p></div></div><div id="chat-panel" hidden><div id="messages" class="messages" aria-label="Messages"></div><div id="message-form" class="message-form" role="group" aria-label="Send message"><label class="sr-only" for="message">Message</label><textarea id="message" maxlength="4000" required rows="1" placeholder="Message"></textarea><button id="send-message" class="primary-button" type="button">Send</button></div><p id="message-error" class="form-error" role="alert" hidden></p></div>
       </section>
