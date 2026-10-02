@@ -4,7 +4,7 @@ await window.ACMTNCryptoReady;
 const ROOM_HASH_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 let room, nickname = "", pollTimer;
 const seen = new Set(), ownMessageHashes = new Set();
-const log = (event, detail) => console.info(`[${event}]`, detail);
+const log = () => {};
 const revealRoom = () => document.body.classList.add("room-ready");
 const showError = (element, message) => { element.textContent = message; element.hidden = false; };
 const clearError = (element) => { element.textContent = ""; element.hidden = true; };

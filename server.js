@@ -13,7 +13,7 @@ const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 const MAX_CIPHERTEXT = 32768;
 const toBase64Url = (value) => Buffer.from(value).toString("base64url");
 const fromBase64Url = (value) => Buffer.from(value, "base64url");
-const safeLog = (event, detail = {}) => console.info(`[${event}]`, detail);
+const safeLog = () => {};
 const doubleHash = (roomHash) => crypto.createHash("sha256").update(roomHash, "utf8").digest("base64url");
 const isValidRoomHash = (value) => typeof value === "string" && ROOM_HASH_PATTERN.test(value);
 const isEncoded = (value, min = 1, max = MAX_CIPHERTEXT) => typeof value === "string" && value.length >= min && value.length <= max && BASE64URL_PATTERN.test(value);
