@@ -10,9 +10,9 @@ The PIN never appears in an HTTP request body, URL, server log, or persistent st
 2. Before sending, an authenticated client requests a random 256-bit `messageHash`, timestamp, and one-time X25519 server public key. The server signs that key with Ed25519.
 3. The browser verifies the Ed25519 signature. It derives three independent AES-256-GCM keys with HKDF-SHA-256 from its local PIN root, `messageHash`, and timestamp, then encrypts the JSON payload three times.
 4. The browser generates an ephemeral X25519 key pair, derives an upload key with X25519 + HKDF-SHA-256, and AES-256-GCM-encrypts the triple ciphertext for transport. An OPAQUE-session HMAC authorizes this exact upload request.
-5. The server unwraps only the X25519 transport layer, validates the ciphertext shape, and keeps the three AES ciphertext layers in RAM for 15 seconds. It never receives the message plaintext or any AES content key.
+5. The server unwraps only the X25519 transport layer, validates the ciphertext shape, and keeps only the outermost AES ciphertext plus the three AES nonces in RAM for 15 seconds. It never receives the message plaintext or any AES content key.
 6. Clients poll descriptors every two seconds. For an unseen `messageHash`, a client generates a fresh X25519 key pair and signs an OPAQUE-session proof bound to the room hash, message hash, and that fresh public key.
-7. The server verifies the proof, encrypts the still-encrypted three-layer payload to the fresh public key, and returns it with a signed one-time X25519 public key. The browser verifies, unwraps that transport layer, decrypts AES layers 3 → 2 → 1, renders the message, and discards the one-time private key.
+7. The server verifies the proof, encrypts the outermost ciphertext and three nonces to the fresh public key, and returns it with a signed one-time X25519 public key. The browser verifies, unwraps that transport layer, decrypts AES layers 3 → 2 → 1, renders the message, and discards the one-time private key.
 
 Only a client with the PIN can establish an OPAQUE session and derive the three content keys. The room lookup hash is double-hashed before it becomes a RAM-map key. Message descriptors expose no message ciphertext; a hash alone cannot authorize a claim.
 
