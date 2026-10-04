@@ -18,11 +18,18 @@ async function existingLogin(room) {
   const login = new Login(); try { const begin = await request("/api/auth/login/start", { method: "POST", body: JSON.stringify({ hash: room.roomHash, request: toBase64Url(login.start(room.pin)) }) }); if (!begin.response.ok || !begin.body) throw new Error("authentication_failed"); const finish = await request("/api/auth/login/finish", { method: "POST", body: JSON.stringify({ nonce: begin.body.nonce, final: toBase64Url(login.finish(room.pin, fromBase64Url(begin.body.response))) }) }); if (!finish.response.ok || !finish.body) throw new Error("authentication_failed"); room.sessionId = finish.body.sessionId; room.sessionKey = new Uint8Array(login.getSessionKey()); room.sessionExpiresAt = Date.now() + Math.max(0, Number(finish.body.expiresInMs || 0) - 10000); log("auth", { action: "OPAQUE session ready", algorithm: "OPAQUE", keyOrigin: "OPAQUE handshake", renewal: "scheduled before expiry" }); } finally { login.free(); }
 }
 async function opaqueLogin(room) {
-  const registration = new Registration(); const begin = await request("/api/auth/register/start", { method: "POST", body: JSON.stringify({ hash: room.roomHash, request: toBase64Url(registration.start(room.pin)) }) });
-  if (begin.response.status === 409) { registration.free(); return existingLogin(room); }
-  if (!begin.response.ok || !begin.body) { registration.free(); throw new Error("authentication_failed"); }
-  try { const finish = await request("/api/auth/register/finish", { method: "POST", body: JSON.stringify({ nonce: begin.body.nonce, record: toBase64Url(registration.finish(room.pin, fromBase64Url(begin.body.response))) }) }); if (!finish.response.ok) throw new Error("authentication_failed"); log("auth", { action: "OPAQUE credential registered", storage: "RAM only" }); } finally { registration.free(); } return existingLogin(room);
+  const registration = new Registration();
+  try {
+    const begin = await request("/api/auth/register/start", { method: "POST", body: JSON.stringify({ hash: room.roomHash, request: toBase64Url(registration.start(room.pin)) }) });
+    if (begin.response.status === 409) return existingLogin(room);
+    if (!begin.response.ok || !begin.body) throw new Error("authentication_failed");
+    const finish = await request("/api/auth/register/finish", { method: "POST", body: JSON.stringify({ nonce: begin.body.nonce, record: toBase64Url(registration.finish(room.pin, fromBase64Url(begin.body.response))) }) });
+    if (!finish.response.ok) throw new Error("authentication_failed");
+    log("auth", { action: "OPAQUE credential registered", storage: "RAM only" });
+  } finally { registration.free(); }
+  return existingLogin(room);
 }
+async function authenticateRoom(room) { let failure; for (let attempt = 0; attempt < 2; attempt += 1) { try { return await opaqueLogin(room); } catch (error) { failure = error; if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 250)); } } throw failure; }
 async function signingKey(room) { if (room.signingPublicKey) return room.signingPublicKey; const { response, body } = await request("/api/crypto/config"); if (!response.ok || !body?.signingPublicKey) throw new Error("crypto_config_failed"); room.signingPublicKey = await crypto.subtle.importKey("raw", fromBase64Url(body.signingPublicKey), { name: "Ed25519" }, false, ["verify"]); log("crypto", { action: "Loaded signing public key", algorithm: "Ed25519", keyOrigin: "server configuration" }); return room.signingPublicKey; }
 async function verifyServerKey(room, purpose, messageHash, createdAt, publicKey, signature) { if (!await crypto.subtle.verify("Ed25519", await signingKey(room), fromBase64Url(signature), encoder.encode(`${purpose}\n${messageHash}\n${createdAt}\n${publicKey}`))) throw new Error("invalid_server_signature"); }
 async function envelopeKey(privateKey, publicKey, messageHash, createdAt, purpose) { const remote = await crypto.subtle.importKey("raw", fromBase64Url(publicKey), { name: "X25519" }, false, []); const shared = await crypto.subtle.deriveBits({ name: "X25519", public: remote }, privateKey, 256); const base = await crypto.subtle.importKey("raw", shared, "HKDF", false, ["deriveKey"]); return crypto.subtle.deriveKey({ name: "HKDF", hash: "SHA-256", salt: await sha256(encoder.encode(`${messageHash}|${createdAt}`)), info: encoder.encode(`neutron/v2/${purpose}`) }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]); }
@@ -37,5 +44,5 @@ async function claimMessage(room, descriptor) { const pair = await crypto.subtle
 }
 
 await initialiseOpaque();
-window.ACMTNCrypto = { deriveRoom, opaqueLogin, existingLogin, sendMessage, claimMessage, isAsciiPin, isValidNickname };
+window.ACMTNCrypto = { deriveRoom, authenticateRoom, existingLogin, sendMessage, claimMessage, isAsciiPin, isValidNickname };
 window.ACMTNCryptoReady = Promise.resolve();
