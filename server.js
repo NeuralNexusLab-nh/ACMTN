@@ -11,6 +11,7 @@ const ONION_ORIGIN = "http://neutron.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pah
 const ROOM_HASH_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 const MAX_CIPHERTEXT = 32768;
+const P256_PUBLIC_KEY_LENGTH = 87;
 const toBase64Url = (value) => Buffer.from(value).toString("base64url");
 const fromBase64Url = (value) => Buffer.from(value, "base64url");
 const safeLog = () => {};
@@ -32,16 +33,9 @@ function opaqueSetupFromEnvironment() {
   safeLog("startup", { event: "Generated ephemeral OPAQUE setup; configure NEUTRON_OPAQUE_SERVER_SETUP for restart stability." });
   return new ServerSetup();
 }
-function signingKeyFromEnvironment() {
-  const value = process.env.NEUTRON_ED25519_PRIVATE_KEY;
-  if (value && isEncoded(value, 32, 256)) return crypto.createPrivateKey({ key: fromBase64Url(value), format: "der", type: "pkcs8" });
-  safeLog("startup", { event: "Generated ephemeral Ed25519 signing key; configure NEUTRON_ED25519_PRIVATE_KEY for restart stability." });
-  return crypto.generateKeyPairSync("ed25519").privateKey;
-}
-function publicRaw(key) { return fromBase64Url(key.export({ format: "jwk" }).x); }
-function x25519PublicKey(raw) { return crypto.createPublicKey({ key: { kty: "OKP", crv: "X25519", x: toBase64Url(raw) }, format: "jwk" }); }
+function p256Pair() { const ecdh = crypto.createECDH("prime256v1"); ecdh.generateKeys(); return { privateKey: ecdh.getPrivateKey(), publicKey: ecdh.getPublicKey() }; }
 function envelopeKey(privateKey, remoteRaw, messageHash, createdAt, purpose) {
-  const shared = crypto.diffieHellman({ privateKey, publicKey: x25519PublicKey(remoteRaw) });
+  const ecdh = crypto.createECDH("prime256v1"); ecdh.setPrivateKey(privateKey); const shared = ecdh.computeSecret(remoteRaw);
   const salt = crypto.createHash("sha256").update(`${messageHash}|${createdAt}`, "utf8").digest();
   return crypto.hkdfSync("sha256", shared, salt, Buffer.from(`neutron/v2/${purpose}`, "utf8"), 32);
 }
@@ -56,9 +50,7 @@ function encryptEnvelope(privateKey, remoteRaw, messageHash, createdAt, purpose,
   const cipher = crypto.createCipheriv("aes-256-gcm", envelopeKey(privateKey, remoteRaw, messageHash, createdAt, purpose), nonce);
   return { nonce: toBase64Url(nonce), ciphertext: toBase64Url(Buffer.concat([cipher.update(plaintext), cipher.final(), cipher.getAuthTag()])) };
 }
-function signedServerKey(signingKey, purpose, messageHash, createdAt, publicKey) {
-  return toBase64Url(crypto.sign(null, Buffer.from(`${purpose}\n${messageHash}\n${createdAt}\n${publicKey}`, "utf8"), signingKey));
-}
+function serverKeyProof(session, purpose, hash, messageHash, createdAt, publicKey) { return toBase64Url(crypto.createHmac("sha256", session.key).update(`server-${purpose}-key\n${hash}\n${messageHash}\n${createdAt}\n${publicKey}`, "utf8").digest()); }
 function verifyProof(session, purpose, hash, messageHash, publicKey, proof) {
   if (!session || !isEncoded(proof, 43, 128)) return false;
   const expected = crypto.createHmac("sha256", session.key).update(`${purpose}\n${hash}\n${messageHash || ""}\n${publicKey || ""}`, "utf8").digest();
@@ -69,7 +61,7 @@ function validContent(content) { return content && Array.isArray(content.nonces)
 
 function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 30000, opaqueRecordTtlMs = 3600000, cleanupIntervalMs = 1000 } = {}) {
   const app = express(); const rooms = new Map(); const opaqueRecords = new Map(); const registrationStates = new Map(); const loginStates = new Map(); const sessions = new Map(); const preparations = new Map();
-  const opaqueSetup = opaqueSetupFromEnvironment(); const signingKey = signingKeyFromEnvironment(); const signingPublicKey = toBase64Url(publicRaw(crypto.createPublicKey(signingKey)));
+  const opaqueSetup = opaqueSetupFromEnvironment();
   app.disable("x-powered-by");
   app.use((request, response, next) => {
     response.set({ "Cache-Control": "no-store, max-age=0", "Clear-Site-Data": "\"cache\"", "Content-Security-Policy": "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self'", "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Resource-Policy": "same-origin", "Permissions-Policy": "camera=(), geolocation=(), microphone=(), payment=(), usb=()", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY" });
@@ -77,7 +69,6 @@ function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 
   });
   app.use(express.json({ limit: "48kb", strict: true, type: "application/json" }));
   app.get("/api/site", (request, response) => response.json({ alternateAddress: alternateAddress(request.hostname, request.socket.remoteAddress) }));
-  app.get("/api/crypto/config", (_request, response) => response.json({ v: 2, signingPublicKey }));
   app.get("/", (_request, response) => response.sendFile(path.join(PUBLIC_DIRECTORY, "index.html")));
   app.get("/room", (request, response) => !isValidRoomHash(request.query.hash) ? response.status(404).sendFile(path.join(PUBLIC_DIRECTORY, "404.html")) : response.sendFile(path.join(PUBLIC_DIRECTORY, "room.html")));
 
@@ -105,16 +96,16 @@ function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 
   });
   app.post("/api/message/prepare", (request, response) => {
     const { hash, sessionId, proof } = request.body || {}; const session = sessions.get(sessionId); if (!isValidRoomHash(hash) || !session || session.roomKey !== roomKey(hash) || !verifyProof(session, "prepare", hash, "", "", proof)) return response.status(401).json({ error: "authentication_required" });
-    const messageHash = randomToken(32); const createdAt = new Date().toISOString(); const pair = crypto.generateKeyPairSync("x25519"); const publicKey = toBase64Url(publicRaw(pair.publicKey)); preparations.set(messageHash, { roomKey: roomKey(hash), privateKey: pair.privateKey, createdAt, expiresAt: Date.now() + authTtlMs }); safeLog("crypto", { action: "Created one-time upload public key", algorithm: "X25519 + HKDF-SHA-256 + AES-256-GCM", keyOrigin: "server generated" }); return response.json({ messageHash, createdAt, publicKey, signature: signedServerKey(signingKey, "upload", messageHash, createdAt, publicKey) });
+    const messageHash = randomToken(32); const createdAt = new Date().toISOString(); const pair = p256Pair(); const publicKey = toBase64Url(pair.publicKey); preparations.set(messageHash, { roomKey: roomKey(hash), privateKey: pair.privateKey, createdAt, expiresAt: Date.now() + authTtlMs }); safeLog("crypto", { action: "Created one-time upload public key", algorithm: "P-256 ECDH + HKDF-SHA-256 + AES-256-GCM", keyOrigin: "server generated" }); return response.json({ messageHash, createdAt, publicKey, proof: serverKeyProof(session, "upload", hash, messageHash, createdAt, publicKey) });
   });
   app.post("/api/message", (request, response) => {
     const { hash, sessionId, proof, messageHash, clientPublicKey, nonce, ciphertext } = request.body || {}; const session = sessions.get(sessionId); const preparation = preparations.get(messageHash);
-    if (!isValidRoomHash(hash) || !preparation || !session || session.roomKey !== preparation.roomKey || preparation.roomKey !== roomKey(hash) || !isEncoded(clientPublicKey, 43, 43) || !isEncoded(nonce, 16, 32) || !isEncoded(ciphertext, 17, MAX_CIPHERTEXT) || !verifyProof(session, "upload", hash, messageHash, clientPublicKey, proof)) return response.status(401).json({ error: "authentication_required" });
+    if (!isValidRoomHash(hash) || !preparation || !session || session.roomKey !== preparation.roomKey || preparation.roomKey !== roomKey(hash) || !isEncoded(clientPublicKey, P256_PUBLIC_KEY_LENGTH, P256_PUBLIC_KEY_LENGTH) || !isEncoded(nonce, 16, 32) || !isEncoded(ciphertext, 17, MAX_CIPHERTEXT) || !verifyProof(session, "upload", hash, messageHash, clientPublicKey, proof)) return response.status(401).json({ error: "authentication_required" });
     try { const body = JSON.parse(decryptEnvelope(preparation.privateKey, fromBase64Url(clientPublicKey), messageHash, preparation.createdAt, "upload", nonce, ciphertext).toString("utf8")); if (!body || body.v !== 2 || body.messageHash !== messageHash || body.createdAt !== preparation.createdAt || !validContent(body.content)) throw new Error(); const active = (rooms.get(preparation.roomKey) || []).filter((item) => item.expiresAt > Date.now()); active.push({ v: 2, messageHash, createdAt: preparation.createdAt, content: body.content, expiresAt: Date.now() + messageTtlMs }); rooms.set(preparation.roomKey, active); preparations.delete(messageHash); const record = opaqueRecords.get(preparation.roomKey); if (record) record.expiresAt = Date.now() + opaqueRecordTtlMs; safeLog("storage", { action: "Stored outermost AES ciphertext and three nonces", storage: "RAM only", ttlMs: messageTtlMs, plaintext: "never received" }); return response.status(202).json({ accepted: true }); } catch { return response.status(400).json({ error: "invalid_envelope" }); }
   });
   app.post("/api/message/claim", (request, response) => {
-    const { hash, sessionId, proof, messageHash, clientPublicKey } = request.body || {}; const session = sessions.get(sessionId); if (!isValidRoomHash(hash) || !session || session.roomKey !== roomKey(hash) || !isEncoded(messageHash, 43, 43) || !isEncoded(clientPublicKey, 43, 43) || !verifyProof(session, "download", hash, messageHash, clientPublicKey, proof)) return response.status(401).json({ error: "authentication_required" });
-    const message = (rooms.get(session.roomKey) || []).find((item) => item.messageHash === messageHash && item.expiresAt > Date.now()); if (!message) return response.status(404).json({ error: "message_not_found" }); const pair = crypto.generateKeyPairSync("x25519"); const publicKey = toBase64Url(publicRaw(pair.publicKey)); const envelope = encryptEnvelope(pair.privateKey, fromBase64Url(clientPublicKey), messageHash, message.createdAt, "download", Buffer.from(JSON.stringify({ v: 2, messageHash, createdAt: message.createdAt, content: message.content }))); safeLog("crypto", { action: "Wrapped ciphertext for authenticated recipient", algorithm: "X25519 + HKDF-SHA-256 + AES-256-GCM", keyOrigin: "server generated" }); return response.json({ v: 2, messageHash, createdAt: message.createdAt, publicKey, signature: signedServerKey(signingKey, "download", messageHash, message.createdAt, publicKey), ...envelope });
+    const { hash, sessionId, proof, messageHash, clientPublicKey } = request.body || {}; const session = sessions.get(sessionId); if (!isValidRoomHash(hash) || !session || session.roomKey !== roomKey(hash) || !isEncoded(messageHash, 43, 43) || !isEncoded(clientPublicKey, P256_PUBLIC_KEY_LENGTH, P256_PUBLIC_KEY_LENGTH) || !verifyProof(session, "download", hash, messageHash, clientPublicKey, proof)) return response.status(401).json({ error: "authentication_required" });
+    const message = (rooms.get(session.roomKey) || []).find((item) => item.messageHash === messageHash && item.expiresAt > Date.now()); if (!message) return response.status(404).json({ error: "message_not_found" }); const pair = p256Pair(); const publicKey = toBase64Url(pair.publicKey); const envelope = encryptEnvelope(pair.privateKey, fromBase64Url(clientPublicKey), messageHash, message.createdAt, "download", Buffer.from(JSON.stringify({ v: 2, messageHash, createdAt: message.createdAt, content: message.content }))); safeLog("crypto", { action: "Wrapped ciphertext for authenticated recipient", algorithm: "P-256 ECDH + HKDF-SHA-256 + AES-256-GCM", keyOrigin: "server generated" }); return response.json({ v: 2, messageHash, createdAt: message.createdAt, publicKey, proof: serverKeyProof(session, "download", hash, messageHash, message.createdAt, publicKey), ...envelope });
   });
   app.use("/vendor/opaque", express.static(OPAQUE_CLIENT_DIRECTORY, { etag: false, maxAge: 0 })); app.use(express.static(PUBLIC_DIRECTORY, { etag: false, index: false, maxAge: 0 })); app.use((_request, response) => response.status(404).sendFile(path.join(PUBLIC_DIRECTORY, "404.html")));
   const cleanupTimer = setInterval(() => { const now = Date.now(); for (const [key, messages] of rooms.entries()) { const active = messages.filter((item) => item.expiresAt > now); if (active.length) rooms.set(key, active); else rooms.delete(key); } for (const map of [opaqueRecords, registrationStates, loginStates, sessions, preparations]) for (const [key, value] of map.entries()) if (value.expiresAt <= now) map.delete(key); }, cleanupIntervalMs); cleanupTimer.unref();
