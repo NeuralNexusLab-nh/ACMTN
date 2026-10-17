@@ -27,9 +27,8 @@ function alternateAddress(hostname, remoteAddress) {
   const brand = host.startsWith("neutron.") ? "acmtn" : "neutron";
   return onion ? `http://${brand}.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion/` : `https://${brand}.nxlabtw.com/`;
 }
-function opaqueSetupFromEnvironment() {
-  const value = process.env.NEUTRON_OPAQUE_SERVER_SETUP;
-  if (value && isEncoded(value, 32, 4096)) return ServerSetup.deserialize(fromBase64Url(value));
+function opaqueSetupFromEnvironment(value = process.env.NEUTRON_OPAQUE_SERVER_SETUP) {
+  if (value && isEncoded(value, 32, 4096)) { try { return ServerSetup.deserialize(fromBase64Url(value)); } catch {} }
   safeLog("startup", { event: "Generated ephemeral OPAQUE setup; configure NEUTRON_OPAQUE_SERVER_SETUP for restart stability." });
   return new ServerSetup();
 }
@@ -59,9 +58,9 @@ function verifyProof(session, purpose, hash, messageHash, publicKey, proof) {
 }
 function validContent(content) { return content && Array.isArray(content.nonces) && content.nonces.length === 3 && content.nonces.every((nonce) => isEncoded(nonce, 16, 32)) && isEncoded(content.ciphertext, 17, MAX_CIPHERTEXT); }
 
-function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 30000, opaqueRecordTtlMs = 3600000, cleanupIntervalMs = 1000 } = {}) {
+function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 30000, opaqueRecordTtlMs = 3600000, cleanupIntervalMs = 1000, opaqueSetupValue } = {}) {
   const app = express(); const rooms = new Map(); const opaqueRecords = new Map(); const registrationStates = new Map(); const loginStates = new Map(); const sessions = new Map(); const preparations = new Map();
-  const opaqueSetup = opaqueSetupFromEnvironment();
+  const opaqueSetup = opaqueSetupFromEnvironment(opaqueSetupValue);
   app.disable("x-powered-by");
   app.use((request, response, next) => {
     response.set({ "Cache-Control": "no-store, max-age=0", "Clear-Site-Data": "\"cache\"", "Content-Security-Policy": "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self'", "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Resource-Policy": "same-origin", "Permissions-Policy": "camera=(), geolocation=(), microphone=(), payment=(), usb=()", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY" });

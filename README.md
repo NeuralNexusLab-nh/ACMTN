@@ -32,7 +32,7 @@ npm run generate:secrets
 npm start
 ```
 
-Copy the generated value into the service's secret environment as `NEUTRON_OPAQUE_SERVER_SETUP`. Generate it once and preserve it across restarts; regenerating it invalidates existing short-lived authentication state. Never commit that value or print it in production logs.
+Copy the generated value into the service's secret environment as `NEUTRON_OPAQUE_SERVER_SETUP`. Generate it once and preserve it across restarts; regenerating it invalidates existing short-lived authentication state. An unreadable value is ignored and a fresh RAM-only setup is used so the service remains available; replace the environment value with a newly generated one. Never commit that value or print it in production logs.
 
 Open `http://127.0.0.1:3000`. Run automated tests with `npm test`.
 
