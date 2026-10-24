@@ -8,6 +8,7 @@ const { HandleLogin, HandleRegistration, ServerSetup } = require("@47ng/opaque-s
 
 const PUBLIC_DIRECTORY = path.join(__dirname, "public");
 const OPAQUE_CLIENT_DIRECTORY = path.join(__dirname, "node_modules", "@47ng", "opaque-client");
+const ONION_ORIGIN = "http://ntrn6cdbm4n5knrezi5xv7arfy5lvowosfo4x7pw4ftlgv5bui54qvqd.onion";
 const ROOM_HASH_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 const MAX_CIPHERTEXT = 32768;
@@ -58,8 +59,7 @@ function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 
   app.disable("x-powered-by");
   app.use((request, response, next) => {
     response.set({ "Cache-Control": "no-store, max-age=0", "Clear-Site-Data": "\"cache\"", "Content-Security-Policy": "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self'", "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Resource-Policy": "same-origin", "Permissions-Policy": "camera=(), geolocation=(), microphone=(), payment=(), usb=()", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY" });
-    const onion = getOnionStatus();
-    if (onion.url && !request.hostname.endsWith(".onion")) response.set("Onion-Location", `${onion.url}${request.originalUrl}`);
+    if (!request.hostname.endsWith(".onion")) response.set("Onion-Location", `${ONION_ORIGIN}${request.originalUrl}`);
     next();
   });
   app.use(express.json({ limit: "48kb", strict: true, type: "application/json" }));
