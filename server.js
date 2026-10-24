@@ -7,7 +7,6 @@ const { HandleLogin, HandleRegistration, ServerSetup } = require("@47ng/opaque-s
 
 const PUBLIC_DIRECTORY = path.join(__dirname, "public");
 const OPAQUE_CLIENT_DIRECTORY = path.join(__dirname, "node_modules", "@47ng", "opaque-client");
-const ONION_ORIGIN = "http://neutron.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion";
 const ROOM_HASH_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 const MAX_CIPHERTEXT = 32768;
@@ -21,12 +20,6 @@ const isEncoded = (value, min = 1, max = MAX_CIPHERTEXT) => typeof value === "st
 const roomKey = (hash) => doubleHash(hash);
 const randomToken = (bytes = 32) => crypto.randomBytes(bytes).toString("base64url");
 
-function alternateAddress(hostname, remoteAddress) {
-  const host = String(hostname || "").toLowerCase();
-  const onion = host.endsWith(".onion") || ["127.0.0.1", "::ffff:127.0.0.1", "::1"].includes(remoteAddress);
-  const brand = host.startsWith("neutron.") ? "acmtn" : "neutron";
-  return onion ? `http://${brand}.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion/` : `https://${brand}.nxlabtw.com/`;
-}
 function opaqueSetupFromEnvironment(value = process.env.NEUTRON_OPAQUE_SERVER_SETUP) {
   if (value && isEncoded(value, 32, 4096)) { try { return ServerSetup.deserialize(fromBase64Url(value)); } catch {} }
   safeLog("startup", { event: "Generated ephemeral OPAQUE setup; configure NEUTRON_OPAQUE_SERVER_SETUP for restart stability." });
@@ -64,10 +57,9 @@ function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 
   app.disable("x-powered-by");
   app.use((request, response, next) => {
     response.set({ "Cache-Control": "no-store, max-age=0", "Clear-Site-Data": "\"cache\"", "Content-Security-Policy": "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self'", "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Resource-Policy": "same-origin", "Permissions-Policy": "camera=(), geolocation=(), microphone=(), payment=(), usb=()", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY" });
-    if (!String(request.hostname || "").endsWith(".onion")) response.set("Onion-Location", `${ONION_ORIGIN}${request.originalUrl}`); next();
+    next();
   });
   app.use(express.json({ limit: "48kb", strict: true, type: "application/json" }));
-  app.get("/api/site", (request, response) => response.json({ alternateAddress: alternateAddress(request.hostname, request.socket.remoteAddress) }));
   app.get("/", (_request, response) => response.sendFile(path.join(PUBLIC_DIRECTORY, "index.html")));
   app.get("/room", (request, response) => !isValidRoomHash(request.query.hash) ? response.status(404).sendFile(path.join(PUBLIC_DIRECTORY, "404.html")) : response.sendFile(path.join(PUBLIC_DIRECTORY, "room.html")));
 
@@ -111,4 +103,4 @@ function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 
   return { app, rooms, opaqueRecords, close: () => { clearInterval(cleanupTimer); opaqueSetup.free(); } };
 }
 if (require.main === module) { const { app } = createApp(); const port = Number.parseInt(process.env.PORT || "3000", 10); app.listen(port, "0.0.0.0", () => safeLog("startup", { service: "Neutron - ACMTN", port })); }
-module.exports = { createApp, doubleHash, isValidRoomHash, alternateAddress };
+module.exports = { createApp, doubleHash, isValidRoomHash };

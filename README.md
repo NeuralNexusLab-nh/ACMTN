@@ -18,7 +18,7 @@ Only a client with the PIN can establish an OPAQUE session and derive the three 
 
 ## Security boundaries
 
-HTTPS protects the page and API from network interception on the clearnet; the Onion address adds Tor routing and onion-service authentication. Neither protects a visitor from a compromised server delivering altered JavaScript. Do not describe this as independently audited or suitable for life-critical communications until it has received a professional audit.
+HTTPS protects the page and API from network interception. It does not protect a visitor from a compromised server delivering altered JavaScript. Do not describe this as independently audited or suitable for life-critical communications until it has received a professional audit.
 
 Use a long, unique, high-entropy PIN. Short or reused PINs remain vulnerable to guessing. Sender identity is intentionally anonymous: messages contain no account, nickname, or persistent identifier.
 
@@ -38,12 +38,9 @@ Open `http://127.0.0.1:3000`. Run automated tests with `npm test`.
 
 ## Deployment
 
-Run Express behind a TLS-terminating reverse proxy for `https://neutron.nxlabtw.com`; configure the Tor onion service to forward to the same local service. Do not enable request-body logging, analytics, CDN script injection, persistence, process snapshots, or error reporting that captures request bodies. Preserve the OPAQUE server secret through deploys.
+Run Express behind a TLS-terminating reverse proxy for `https://neutron.nxlabtw.com`. Do not enable request-body logging, analytics, CDN script injection, persistence, process snapshots, or error reporting that captures request bodies. Preserve the OPAQUE server secret through deploys.
 
-Primary access: `https://neutron.nxlabtw.com`  
-Tor access: `http://neutron.nxlabtwhcegzi5f65qb6ri4iv72rtdp5q7s4w457pahcohtmegjregqd.onion/`
-
-Legacy `acmtn.nxlabtw.com` and its onion hostname should route to the same service. The application emits `Onion-Location` on non-onion responses.
+Production access: `https://neutron.nxlabtw.com`
 
 ## License
 
