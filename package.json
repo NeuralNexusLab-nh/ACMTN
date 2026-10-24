@@ -9,6 +9,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test",
+    "build:render": "bash scripts/install-tor.sh",
     "generate:secrets": "node scripts/generate-server-secrets.js",
     "generate:onion": "node scripts/generate-onion-secret.js"
   },
