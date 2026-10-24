@@ -9,7 +9,8 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test",
-    "generate:secrets": "node scripts/generate-server-secrets.js"
+    "generate:secrets": "node scripts/generate-server-secrets.js",
+    "generate:onion": "node scripts/generate-onion-secret.js"
   },
   "engines": {
     "node": ">=20"

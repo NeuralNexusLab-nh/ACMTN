@@ -4,10 +4,10 @@
     <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="description" content="Neutron — private, encrypted conversations.">
     <title>Neutron - ACMTN</title><link rel="icon" href="/assets/icons/neutron-mark.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/assets/css/tokens.css"><link rel="stylesheet" href="/assets/css/app.css"><link rel="stylesheet" href="/assets/css/home-flow.css"><link rel="stylesheet" href="/assets/css/home-journey.css">
-    <script type="module" src="/scripts/crypto.js"></script><script type="module" src="/scripts/app.js"></script>
+    <script src="/scripts/onion.js" defer></script><script type="module" src="/scripts/crypto.js"></script><script type="module" src="/scripts/app.js"></script>
   </head>
   <body class="home-page">
-    <header class="navbar shell"><a class="brand" href="/"><img src="/assets/icons/neutron-mark.svg" alt=""><span>Neutron - ACMTN</span></a></header>
+    <header class="navbar shell"><a class="brand" href="/"><img src="/assets/icons/neutron-mark.svg" alt=""><span>Neutron - ACMTN</span></a><a id="onion-access" class="onion-link" hidden>Onion Access</a></header>
     <main class="home-main shell">
       <section class="hero" aria-labelledby="acmtn-title"><h1 id="acmtn-title">Neutron</h1><p class="full-name">Advanced Confidential Message Transfer Network</p><p class="hero-copy">Your messages, your secret.</p></section>
       <section class="entry-card" aria-labelledby="entry-title"><div class="entry-head"><h2 id="entry-title">Create or join a room</h2></div><div id="join-form" role="group" aria-label="Room entry"><label class="sr-only" for="room-pin">Room PIN</label><div class="pin-row"><input id="room-pin" type="password" inputmode="text" maxlength="255" autocomplete="off" spellcheck="false" required placeholder="Room PIN"><button id="enter-room" class="primary-button" type="button">Enter</button></div><p id="join-error" class="form-error" role="alert" hidden></p></div><a id="public-room" class="public-room-link" href="/room?hash=GuW1biDQGNShma2JMYiCPl-khW2_LPAQMbItY8lETjQ">Join the public room <span aria-hidden="true">↗</span></a></section>

@@ -3,6 +3,7 @@
 const crypto = require("node:crypto");
 const express = require("express");
 const path = require("node:path");
+const { startOnion } = require("./lib/onion");
 const { HandleLogin, HandleRegistration, ServerSetup } = require("@47ng/opaque-server");
 
 const PUBLIC_DIRECTORY = path.join(__dirname, "public");
@@ -51,15 +52,19 @@ function verifyProof(session, purpose, hash, messageHash, publicKey, proof) {
 }
 function validContent(content) { return content && Array.isArray(content.nonces) && content.nonces.length === 3 && content.nonces.every((nonce) => isEncoded(nonce, 16, 32)) && isEncoded(content.ciphertext, 17, MAX_CIPHERTEXT); }
 
-function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 30000, opaqueRecordTtlMs = 3600000, cleanupIntervalMs = 1000, opaqueSetupValue } = {}) {
+function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 30000, opaqueRecordTtlMs = 3600000, cleanupIntervalMs = 1000, opaqueSetupValue, getOnionStatus = () => ({ enabled: false, state: "disabled", url: null }) } = {}) {
   const app = express(); const rooms = new Map(); const opaqueRecords = new Map(); const registrationStates = new Map(); const loginStates = new Map(); const sessions = new Map(); const preparations = new Map();
   const opaqueSetup = opaqueSetupFromEnvironment(opaqueSetupValue);
   app.disable("x-powered-by");
   app.use((request, response, next) => {
     response.set({ "Cache-Control": "no-store, max-age=0", "Clear-Site-Data": "\"cache\"", "Content-Security-Policy": "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self'", "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Resource-Policy": "same-origin", "Permissions-Policy": "camera=(), geolocation=(), microphone=(), payment=(), usb=()", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY" });
+    const onion = getOnionStatus();
+    if (onion.url && !request.hostname.endsWith(".onion")) response.set("Onion-Location", `${onion.url}${request.originalUrl}`);
     next();
   });
   app.use(express.json({ limit: "48kb", strict: true, type: "application/json" }));
+  app.get("/api/onion", (_request, response) => response.json(getOnionStatus()));
+  app.get("/healthz", (_request, response) => response.json({ ok: true }));
   app.get("/", (_request, response) => response.sendFile(path.join(PUBLIC_DIRECTORY, "index.html")));
   app.get("/room", (request, response) => !isValidRoomHash(request.query.hash) ? response.status(404).sendFile(path.join(PUBLIC_DIRECTORY, "404.html")) : response.sendFile(path.join(PUBLIC_DIRECTORY, "room.html")));
 
@@ -102,5 +107,14 @@ function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 
   const cleanupTimer = setInterval(() => { const now = Date.now(); for (const [key, messages] of rooms.entries()) { const active = messages.filter((item) => item.expiresAt > now); if (active.length) rooms.set(key, active); else rooms.delete(key); } for (const map of [opaqueRecords, registrationStates, loginStates, sessions, preparations]) for (const [key, value] of map.entries()) if (value.expiresAt <= now) map.delete(key); }, cleanupIntervalMs); cleanupTimer.unref();
   return { app, rooms, opaqueRecords, close: () => { clearInterval(cleanupTimer); opaqueSetup.free(); } };
 }
-if (require.main === module) { const { app } = createApp(); const port = Number.parseInt(process.env.PORT || "3000", 10); app.listen(port, "0.0.0.0", () => safeLog("startup", { service: "Neutron - ACMTN", port })); }
+if (require.main === module) {
+  const port = Number.parseInt(process.env.PORT || "3000", 10);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("invalid_port");
+  let onion;
+  const service = createApp({ getOnionStatus: () => onion?.getStatus() || { enabled: false, state: "starting", url: null } });
+  const server = service.app.listen(port, "0.0.0.0", () => { onion = startOnion({ port }); });
+  let stopping = false;
+  const stop = async () => { if (stopping) return; stopping = true; const force = setTimeout(() => process.exit(1), 8000); force.unref(); await onion?.stop(); server.close(() => { service.close(); clearTimeout(force); }); server.closeAllConnections(); };
+  process.on("SIGTERM", stop); process.on("SIGINT", stop);
+}
 module.exports = { createApp, doubleHash, isValidRoomHash };

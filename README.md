@@ -42,6 +42,31 @@ Run Express behind a TLS-terminating reverse proxy for `https://neutron.nxlabtw.
 
 Production access: `https://neutron.nxlabtw.com`
 
+### Onion access on the same Render Web Service
+
+The Dockerfile installs Node.js and Tor in one container. `node server.js` starts Express first, then manages one Tor child process. It does not create a second Render service, background worker, relay node, or public SOCKS proxy. HTTP continues to work while Tor connects or restarts. Tor uses additional memory and bandwidth within the same instance.
+
+1. Generate a secret locally with `npm run generate:onion`. This prints `NEUTRON_ONION_SEED` and its corresponding v3 onion address. Only this explicit local generation command prints the secret; the running server never does.
+2. In the **existing** Render Web Service, add `NEUTRON_ONION_SEED` with the generated Base64 value only (no variable name, quotes, or line breaks). Keep the same value across deployments. It is a 32-byte Ed25519 seed, not the chat OPAQUE setup or a Tor `hs_ed25519_secret_key` file.
+3. In that same service, open **Settings → Build → Source → Edit**, select the current repository/branch, and change Runtime to **Docker**. Use the root `Dockerfile`, with its default command `node server.js`. Do not create another service or Blueprint. Retain existing environment variables, custom domain, and Free instance plan. Render supplies `PORT`; Express listens on `0.0.0.0:$PORT`, and Tor forwards onion port 80 to `127.0.0.1:$PORT`.
+4. Set the service health check to `/healthz`. Check `/api/onion` for `starting`, `connecting`, `ready`, `retrying`, or `invalid_key`. Only the public URL and status are exposed. A missing seed disables Tor; an invalid seed does not generate a replacement identity.
+
+Once Tor bootstraps, `/api/onion` returns the onion URL, the homepage displays **Onion Access**, and clearnet responses include `Onion-Location`. Bootstrap completion does not guarantee immediate descriptor propagation or reachability from every Tor client; verify the link in Tor Browser after deployment. The relay's chat storage and encryption are shared across both addresses, but browsers keep their local page state separately by origin.
+
+`server.js` derives Tor's expanded ED25519-V3 key from the seed and registers the service over a cookie-authenticated, loopback-only control connection using `ADD_ONION ... Flags=DiscardPK`. The private key is not passed on the command line or persisted in a hidden-service directory. Temporary Tor network state and the control cookie use a private ephemeral directory, removed on orderly shutdown. No persistent disk is required. Rotate the seed only when intentionally changing the onion address.
+
+Render Free instance hours are per service instance, not per process: two processes inside this container do not create a second allocation of hours. A single instance running continuously for 31 days uses 744 hours. Free services remain subject to Render's sleep, resource, and traffic limits; onion traffic is not a reliable wake-up mechanism. Keep any availability monitoring pointed at the HTTPS endpoint.
+
+To generate the seed without checking out this repository, run this in PowerShell or a terminal with Node.js:
+
+```sh
+node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))"
+```
+
+Paste the output into the `NEUTRON_ONION_SEED` value. The server derives the public onion address; retrieve it from `/api/onion` after startup. Never paste the seed into chat, GitHub, or the public website. Existing onion keys use a different format and cannot be pasted into this variable to recover an old address.
+
+Tests can use an installed Tor executable without publishing an onion service: set `TOR_TEST_BINARY` to its path before `npm test`. The integration test runs Tor with networking disabled and verifies two independent launches accept the derived key and return the same expected ServiceID. Docker/container deployment and public Tor reachability should also be checked in the target environment.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
