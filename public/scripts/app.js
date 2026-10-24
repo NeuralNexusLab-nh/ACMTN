@@ -6,18 +6,20 @@ await window.ACMTNCryptoReady;
     const pin = document.getElementById("room-pin");
     const error = document.getElementById("join-error");
     const button = document.getElementById("enter-room");
+    const publicLink = document.getElementById("public-room");
     const original = button.textContent;
-    const resetButton = () => { button.disabled = false; button.textContent = original; };
-    const joinRoom = async () => {
+    const resetButton = () => { button.disabled = false; button.textContent = original; publicLink.removeAttribute("aria-disabled"); };
+    const joinRoom = async (roomPin = pin.value) => {
       if (button.disabled) return;
       error.hidden = true;
-      if (!ACMTNCrypto.isAsciiPin(pin.value)) { error.textContent = "Use 1–255 ASCII characters."; error.hidden = false; return; }
+      if (!ACMTNCrypto.isAsciiPin(roomPin)) { error.textContent = "Use 1–255 ASCII characters."; error.hidden = false; return; }
       button.disabled = true; button.textContent = "Preparing…";
+      publicLink.setAttribute("aria-disabled", "true");
       try {
-        const room = await ACMTNCrypto.deriveRoom(pin.value);
+        const room = await ACMTNCrypto.deriveRoom(roomPin);
         // Storage may be disabled in private browsers. Joining must still work:
         // the room page can ask for the PIN again when handoff is unavailable.
-        try { sessionStorage.setItem("acmtn:entry-pin", pin.value); } catch {}
+        try { sessionStorage.setItem("acmtn:entry-pin", roomPin); } catch {}
         pin.value = "";
         location.assign(`/room?hash=${encodeURIComponent(room.roomHash)}`);
       } catch {
@@ -26,7 +28,8 @@ await window.ACMTNCryptoReady;
         resetButton();
       }
     };
-    button.onclick = joinRoom;
+    button.onclick = () => joinRoom();
+    publicLink.onclick = (event) => { event.preventDefault(); joinRoom("public"); };
     pin.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); joinRoom(); } });
     // Back navigation may restore this document with its pending button state.
     addEventListener("pageshow", resetButton);
