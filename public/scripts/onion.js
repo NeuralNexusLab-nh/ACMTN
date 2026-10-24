@@ -10,7 +10,7 @@
       const ready = onion.state === "ready" && /^http:\/\/[a-z2-7]{56}\.onion$/.test(onion.url);
       link.hidden = !ready;
       if (ready) link.href = `${onion.url}/`;
-      if (onion.enabled && onion.state !== "invalid_key") timer = setTimeout(refresh, ready ? 60000 : 15000);
+      if (onion.enabled && !["invalid_key", "identity_mismatch"].includes(onion.state)) timer = setTimeout(refresh, ready ? 60000 : 15000);
     } catch { link.hidden = true; timer = setTimeout(refresh, 15000); }
   };
   refresh();

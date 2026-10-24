@@ -49,7 +49,7 @@ The Dockerfile installs Node.js and Tor in one container. `node server.js` start
 1. Generate a secret locally with `npm run generate:onion`. This prints `NEUTRON_ONION_SEED` and its corresponding v3 onion address. Only this explicit local generation command prints the secret; the running server never does.
 2. In the **existing** Render Web Service, add `NEUTRON_ONION_SEED` with the generated Base64 value only (no variable name, quotes, or line breaks). Keep the same value across deployments. It is a 32-byte Ed25519 seed, not the chat OPAQUE setup or a Tor `hs_ed25519_secret_key` file.
 3. In that same service, open **Settings → Build → Source → Edit**, select the current repository/branch, and change Runtime to **Docker**. Use the root `Dockerfile`, with its default command `node server.js`. Do not create another service or Blueprint. Retain existing environment variables, custom domain, and Free instance plan. Render supplies `PORT`; Express listens on `0.0.0.0:$PORT`, and Tor forwards onion port 80 to `127.0.0.1:$PORT`.
-4. Set the service health check to `/healthz`. Check `/api/onion` for `starting`, `connecting`, `ready`, `retrying`, or `invalid_key`. Only the public URL and status are exposed. A missing seed disables Tor; an invalid seed does not generate a replacement identity.
+4. Set the service health check to `/healthz`. Check `/api/onion` for `starting`, `connecting`, `ready`, `retrying`, `invalid_key`, or `identity_mismatch`. Only the public URL and status are exposed. Missing identity settings disable Tor; an invalid identity does not generate a replacement.
 
 Once Tor bootstraps, `/api/onion` returns the onion URL, the homepage displays **Onion Access**, and clearnet responses include `Onion-Location`. Bootstrap completion does not guarantee immediate descriptor propagation or reachability from every Tor client; verify the link in Tor Browser after deployment. The relay's chat storage and encryption are shared across both addresses, but browsers keep their local page state separately by origin.
 
@@ -63,7 +63,26 @@ To generate the seed without checking out this repository, run this in PowerShel
 node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))"
 ```
 
-Paste the output into the `NEUTRON_ONION_SEED` value. The server derives the public onion address; retrieve it from `/api/onion` after startup. Never paste the seed into chat, GitHub, or the public website. Existing onion keys use a different format and cannot be pasted into this variable to recover an old address.
+Paste the output into the `NEUTRON_ONION_SEED` value. The server derives the public onion address; retrieve it from `/api/onion` after startup. Never paste the seed into chat, GitHub, or the public website. For an existing or vanity address, use the key-file environment variables below instead of generating a new seed.
+
+### Import an existing mkp224o vanity address
+
+Keep `hostname`, `hs_ed25519_public_key`, and `hs_ed25519_secret_key` from the generated directory as a private local backup. Configure these variables in the **same existing Render service**:
+
+| Variable | Value |
+| --- | --- |
+| `NEUTRON_ONION_SECRET_KEY` | Standard Base64 encoding of the entire binary `hs_ed25519_secret_key` file, including its Tor header. |
+| `NEUTRON_ONION_HOSTNAME` | The single address from the `hostname` file, such as `neutron...onion`, without a scheme or slash. |
+
+In PowerShell, encode the file locally (replace the example path with the exact file path):
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes('D:\your-onion-folder\hs_ed25519_secret_key'))
+```
+
+The output is the secret value: paste it directly into Render, not into chat or GitHub. Do not open or copy the binary file as text, and do not paste this value into `NEUTRON_ONION_SEED`. Remove the seed variable when using vanity keys. Vanity settings take precedence if both are configured; invalid or incomplete vanity settings never fall back to a different identity.
+
+No upload of these files, persistent disk, additional service, or stored public-key file is required. On startup, Node validates the file's 96-byte length and 32-byte Tor header, extracts its existing 64-byte expanded private key unchanged, and sends it to the local Tor control socket. It compares Tor's returned ServiceID with `NEUTRON_ONION_HOSTNAME` before advertising any URL. A mismatch disables further onion startup attempts until restart with corrected settings; HTTPS continues to work. The private material is excluded from the child process environment, command line, public API, and runtime logs. The same configuration restores the same vanity address after redeploys.
 
 Tests can use an installed Tor executable without publishing an onion service: set `TOR_TEST_BINARY` to its path before `npm test`. The integration test runs Tor with networking disabled and verifies two independent launches accept the derived key and return the same expected ServiceID. Docker/container deployment and public Tor reachability should also be checked in the target environment.
 
