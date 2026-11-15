@@ -22,6 +22,7 @@ test("all origins can preflight APIs and read API errors, modules and WASM, whil
         method: "OPTIONS", headers: { Origin: caller, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" }
       });
       assert.equal(response.status, 204);
+      assert.equal(response.headers.get("clear-site-data"), null);
       assert.equal(response.headers.get("access-control-allow-origin"), "*");
       assert.match(response.headers.get("access-control-allow-methods"), /POST/);
       assert.equal(response.headers.get("access-control-allow-headers"), "Content-Type");
@@ -33,6 +34,8 @@ test("all origins can preflight APIs and read API errors, modules and WASM, whil
     assert.equal(response.status, endpoint.includes("hash=bad") ? 404 : 200);
     assert.equal(response.headers.get("access-control-allow-origin"), "*");
     assert.equal(response.headers.get("cross-origin-resource-policy"), "cross-origin");
+    assert.equal(response.headers.get("clear-site-data"), null);
+    assert.match(response.headers.get("cache-control"), /no-store/);
     await response.arrayBuffer();
   }
   for (const body of ["{}", "{"]) {
@@ -42,10 +45,12 @@ test("all origins can preflight APIs and read API errors, modules and WASM, whil
     assert.equal(response.status, body === "{}" ? 401 : 400);
     assert.equal(response.headers.get("access-control-allow-origin"), "*");
     assert.deepEqual(await response.json(), { error: body === "{}" ? "authentication_required" : "invalid_json" });
+    assert.equal(response.headers.get("clear-site-data"), null);
   }
   const home = await fetch(origin);
   assert.equal(home.headers.get("access-control-allow-origin"), null);
   assert.equal(home.headers.get("cross-origin-resource-policy"), "same-origin");
+  assert.equal(home.headers.get("clear-site-data"), '"cache"');
   assert.match(home.headers.get("content-security-policy"), /script-src 'self' 'wasm-unsafe-eval'/);
 }));
 

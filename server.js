@@ -67,6 +67,10 @@ function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 
   app.use((request, response, next) => {
     const shared = request.path === "/api" || request.path.startsWith("/api/") || ["/scripts/crypto.js", "/scripts/crypto-core.mjs"].includes(request.path) || request.path.startsWith("/vendor/opaque/");
     if (!shared) return next();
+    // Credentialless cross-origin clients cannot act on Clear-Site-Data.
+    // Keep no-store, but never evict origin caches during CORS preflights,
+    // module/WASM imports or relay requests. Page navigation keeps its policy.
+    response.removeHeader("Clear-Site-Data");
     response.set({
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",

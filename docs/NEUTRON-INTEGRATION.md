@@ -98,6 +98,8 @@ Cross-Origin-Resource-Policy: cross-origin
 
 `OPTIONS` 回覆 204，且在 JSON 解析、PIN 驗證之前處理。成功和錯誤回應皆帶上述設定。所有來源都能使用；不使用 cookie、`Access-Control-Allow-Credentials` 或來源白名單。客戶端請用 `credentials: "omit"`。這不會略過 OPAQUE、session 或 HMAC 驗證。
 
+這些跨來源 API、crypto 模組及 WASM 回應保留 `Cache-Control: no-store`，但不送 `Clear-Site-Data`。無憑證的跨來源請求無法執行清除網站資料；也不應在每個預檢或訊息請求時清除 origin 快取。一般 HTML 頁面原有的安全標頭維持不變。
+
 API 回應的 CSP 不會授權你網站發送請求：你網站若設 CSP，須在自己的規則加入以下來源，並與原本的規則合併：
 
 ```http
