@@ -62,6 +62,20 @@ function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 
     if (!request.hostname.endsWith(".onion")) response.set("Onion-Location", `${ONION_ORIGIN}${request.originalUrl}`);
     next();
   });
+  // The public relay and browser crypto module use explicit PIN/session proofs, not cookies.
+  app.use((request, response, next) => {
+    const shared = request.path === "/api" || request.path.startsWith("/api/") || request.path === "/scripts/crypto.js" || request.path.startsWith("/vendor/opaque/");
+    if (!shared) return next();
+    response.set({
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "600",
+      "Cross-Origin-Resource-Policy": "cross-origin"
+    });
+    if (request.method === "OPTIONS") return response.status(204).end();
+    next();
+  });
   app.use(express.json({ limit: "48kb", strict: true, type: "application/json" }));
   app.get("/api/onion", (_request, response) => response.json(getOnionStatus()));
   app.get("/healthz", (_request, response) => response.json({ ok: true }));
@@ -102,6 +116,11 @@ function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 
   app.post("/api/message/claim", (request, response) => {
     const { hash, sessionId, proof, messageHash, clientPublicKey } = request.body || {}; const session = sessions.get(sessionId); if (!isValidRoomHash(hash) || !session || session.roomKey !== roomKey(hash) || !isEncoded(messageHash, 43, 43) || !isEncoded(clientPublicKey, P256_PUBLIC_KEY_LENGTH, P256_PUBLIC_KEY_LENGTH) || !verifyProof(session, "download", hash, messageHash, clientPublicKey, proof)) return response.status(401).json({ error: "authentication_required" });
     const message = (rooms.get(session.roomKey) || []).find((item) => item.messageHash === messageHash && item.expiresAt > Date.now()); if (!message) return response.status(404).json({ error: "message_not_found" }); const pair = p256Pair(); const publicKey = toBase64Url(pair.publicKey); const envelope = encryptEnvelope(pair.privateKey, fromBase64Url(clientPublicKey), messageHash, message.createdAt, "download", Buffer.from(JSON.stringify({ v: 2, messageHash, createdAt: message.createdAt, content: message.content }))); safeLog("crypto", { action: "Wrapped ciphertext for authenticated recipient", algorithm: "P-256 ECDH + HKDF-SHA-256 + AES-256-GCM", keyOrigin: "server generated" }); return response.json({ v: 2, messageHash, createdAt: message.createdAt, publicKey, proof: serverKeyProof(session, "download", hash, messageHash, message.createdAt, publicKey), ...envelope });
+  });
+  app.use("/api", (error, _request, response, next) => {
+    if (response.headersSent) return next(error);
+    const status = error.type === "entity.too.large" ? 413 : error.type === "entity.parse.failed" ? 400 : 500;
+    response.status(status).json({ error: status === 413 ? "request_too_large" : status === 400 ? "invalid_json" : "internal_error" });
   });
   app.use("/vendor/opaque", express.static(OPAQUE_CLIENT_DIRECTORY, { etag: false, maxAge: 0 })); app.use(express.static(PUBLIC_DIRECTORY, { etag: false, index: false, maxAge: 0 })); app.use((_request, response) => response.status(404).sendFile(path.join(PUBLIC_DIRECTORY, "404.html")));
   const cleanupTimer = setInterval(() => { const now = Date.now(); for (const [key, messages] of rooms.entries()) { const active = messages.filter((item) => item.expiresAt > now); if (active.length) rooms.set(key, active); else rooms.delete(key); } for (const map of [opaqueRecords, registrationStates, loginStates, sessions, preparations]) for (const [key, value] of map.entries()) if (value.expiresAt <= now) map.delete(key); }, cleanupIntervalMs); cleanupTimer.unref();

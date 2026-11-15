@@ -1,4 +1,4 @@
-import initialiseOpaque, { Login, Registration } from "/vendor/opaque/opaque-client.js";
+import initialiseOpaque, { Login, Registration } from "../vendor/opaque/opaque-client.js";
 
 const encoder = new TextEncoder(), decoder = new TextDecoder(), salt = encoder.encode("NEUTRON/room-root/v2"), log = () => {};
 function toBase64Url(bytes) { let binary = ""; for (const byte of bytes) binary += String.fromCharCode(byte); return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", ""); }
@@ -6,7 +6,7 @@ function fromBase64Url(value) { return Uint8Array.from(atob(value.replaceAll("-"
 function randomBytes(length) { const value = new Uint8Array(length); crypto.getRandomValues(value); return value; }
 function isAsciiPin(pin) { return typeof pin === "string" && pin.length > 0 && pin.length <= 255 && /^[\x00-\x7F]+$/.test(pin); }
 async function sha256(value) { return new Uint8Array(await crypto.subtle.digest("SHA-256", value)); }
-async function request(url, options = {}) { const response = await fetch(url, { credentials: "omit", cache: "no-store", ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } }); let body; try { body = await response.json(); } catch {} return { response, body }; }
+async function request(url, options = {}) { const response = await fetch(new URL(url, import.meta.url), { credentials: "omit", cache: "no-store", ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } }); let body; try { body = await response.json(); } catch {} return { response, body }; }
 async function hmac(sessionKey, purpose, roomHash, messageHash = "", publicKey = "") { const key = await crypto.subtle.importKey("raw", sessionKey, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]); return toBase64Url(new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(`${purpose}\n${roomHash}\n${messageHash}\n${publicKey}`)))); }
 async function deriveRoom(pin) {
   if (!isAsciiPin(pin)) throw new Error("invalid_pin"); log("crypto", { action: "Deriving room root", algorithm: "PBKDF2-SHA-256", keyOrigin: "PIN" });
@@ -42,5 +42,6 @@ async function claimMessage(room, descriptor) { const pair = await crypto.subtle
 }
 
 await initialiseOpaque();
+export { deriveRoom, authenticateRoom, existingLogin, sendMessage, claimMessage, isAsciiPin };
 window.ACMTNCrypto = { deriveRoom, authenticateRoom, existingLogin, sendMessage, claimMessage, isAsciiPin };
 window.ACMTNCryptoReady = Promise.resolve();

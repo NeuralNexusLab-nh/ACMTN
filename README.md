@@ -4,6 +4,8 @@
 
 ## Protocol v2
 
+For cross-origin application messaging, see [接上 Neutron 訊息迴路](docs/NEUTRON-INTEGRATION.md), including a browser example, API payloads, key derivation, CORS/CSP settings, and delivery limits.
+
 The PIN never appears in an HTTP request body, URL, server log, or persistent store. A browser uses it locally to derive a room lookup hash and an in-memory root key.
 
 1. On room entry, the browser completes an [OPAQUE](https://www.rfc-editor.org/rfc/rfc9807) registration or login with the PIN. The server keeps only the resulting OPAQUE credential record and a short session in RAM. The record expires; it is not a message archive.
