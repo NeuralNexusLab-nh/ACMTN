@@ -4,6 +4,7 @@ const crypto = require("node:crypto");
 const express = require("express");
 const path = require("node:path");
 const { startOnion } = require("./lib/onion");
+const { startBzn } = require("./lib/bzn");
 const { HandleLogin, HandleRegistration, ServerSetup } = require("@47ng/opaque-server");
 
 const PUBLIC_DIRECTORY = path.join(__dirname, "public");
@@ -53,7 +54,7 @@ function verifyProof(session, purpose, hash, messageHash, publicKey, proof) {
 }
 function validContent(content) { return content && Array.isArray(content.nonces) && content.nonces.length === 3 && content.nonces.every((nonce) => isEncoded(nonce, 16, 32)) && isEncoded(content.ciphertext, 17, MAX_CIPHERTEXT); }
 
-function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 30000, opaqueRecordTtlMs = 3600000, cleanupIntervalMs = 1000, opaqueSetupValue, getOnionStatus = () => ({ enabled: false, state: "disabled", url: null }) } = {}) {
+function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 30000, opaqueRecordTtlMs = 3600000, cleanupIntervalMs = 1000, opaqueSetupValue, getBznStatus = () => ({ enabled: false, state: "disabled", address: null, url: null }), getOnionStatus = () => ({ enabled: false, state: "disabled", url: null }) } = {}) {
   const app = express(); const rooms = new Map(); const opaqueRecords = new Map(); const registrationStates = new Map(); const loginStates = new Map(); const sessions = new Map(); const preparations = new Map();
   const opaqueSetup = opaqueSetupFromEnvironment(opaqueSetupValue);
   app.disable("x-powered-by");
@@ -64,7 +65,7 @@ function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 
   });
   // The public relay and browser crypto module use explicit PIN/session proofs, not cookies.
   app.use((request, response, next) => {
-    const shared = request.path === "/api" || request.path.startsWith("/api/") || request.path === "/scripts/crypto.js" || request.path.startsWith("/vendor/opaque/");
+    const shared = request.path === "/api" || request.path.startsWith("/api/") || ["/scripts/crypto.js", "/scripts/crypto-core.mjs"].includes(request.path) || request.path.startsWith("/vendor/opaque/");
     if (!shared) return next();
     response.set({
       "Access-Control-Allow-Origin": "*",
@@ -78,6 +79,7 @@ function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 
   });
   app.use(express.json({ limit: "48kb", strict: true, type: "application/json" }));
   app.get("/api/onion", (_request, response) => response.json(getOnionStatus()));
+  app.get("/api/bzn", (_request, response) => response.json(getBznStatus()));
   app.get("/healthz", (_request, response) => response.json({ ok: true }));
   app.get("/", (_request, response) => response.sendFile(path.join(PUBLIC_DIRECTORY, "index.html")));
   app.get("/room", (request, response) => !isValidRoomHash(request.query.hash) ? response.status(404).sendFile(path.join(PUBLIC_DIRECTORY, "404.html")) : response.sendFile(path.join(PUBLIC_DIRECTORY, "room.html")));
@@ -129,11 +131,11 @@ function createApp({ messageTtlMs = 15000, authTtlMs = 600000, handshakeTtlMs = 
 if (require.main === module) {
   const port = Number.parseInt(process.env.PORT || "3000", 10);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("invalid_port");
-  let onion;
-  const service = createApp({ getOnionStatus: () => onion?.getStatus() || { enabled: false, state: "starting", url: null } });
-  const server = service.app.listen(port, "0.0.0.0", () => { onion = startOnion({ port }); });
+  let onion, bzn;
+  const service = createApp({ getOnionStatus: () => onion?.getStatus() || { enabled: false, state: "starting", url: null }, getBznStatus: () => bzn?.getStatus() || { enabled: false, state: "starting", address: null, url: null } });
+  const server = service.app.listen(port, "0.0.0.0", () => { onion = startOnion({ port }); bzn = startBzn({ port }); });
   let stopping = false;
-  const stop = async () => { if (stopping) return; stopping = true; const force = setTimeout(() => process.exit(1), 8000); force.unref(); await onion?.stop(); server.close(() => { service.close(); clearTimeout(force); }); server.closeAllConnections(); };
+  const stop = async () => { if (stopping) return; stopping = true; const force = setTimeout(() => process.exit(1), 8000); force.unref(); bzn?.stop(); await onion?.stop(); server.close(() => { service.close(); clearTimeout(force); }); server.closeAllConnections(); };
   process.on("SIGTERM", stop); process.on("SIGINT", stop);
 }
 module.exports = { createApp, doubleHash, isValidRoomHash };

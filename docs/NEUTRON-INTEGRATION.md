@@ -86,7 +86,7 @@ receiveLoop();
 
 ## 瀏覽器跨來源設定
 
-Neutron 在 `/api`、`/api/*`、`/scripts/crypto.js`、`/vendor/opaque/*` 回傳：
+Neutron 在 `/api`、`/api/*`、`/scripts/crypto.js`、`/scripts/crypto-core.mjs`、`/vendor/opaque/*` 回傳：
 
 ```http
 Access-Control-Allow-Origin: *

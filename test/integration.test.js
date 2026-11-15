@@ -28,7 +28,7 @@ test("all origins can preflight APIs and read API errors, modules and WASM, whil
       assert.equal(response.headers.get("access-control-allow-credentials"), null);
     }
   }
-  for (const endpoint of ["/api/room?hash=" + "A".repeat(43), "/api/room?hash=bad", "/scripts/crypto.js", "/vendor/opaque/opaque-client.js", "/vendor/opaque/opaque-client_bg.wasm"]) {
+  for (const endpoint of ["/api/room?hash=" + "A".repeat(43), "/api/room?hash=bad", "/scripts/crypto.js", "/scripts/crypto-core.mjs", "/vendor/opaque/opaque-client.js", "/vendor/opaque/opaque-client_bg.wasm"]) {
     const response = await fetch(origin + endpoint, { headers: { Origin: "https://other.example" } });
     assert.equal(response.status, endpoint.includes("hash=bad") ? 404 : 200);
     assert.equal(response.headers.get("access-control-allow-origin"), "*");
@@ -50,17 +50,11 @@ test("all origins can preflight APIs and read API errors, modules and WASM, whil
 }));
 
 test("exported client routes API calls to its own service and exchanges triple-encrypted application JSON", async () => withServer(async origin => {
-  // Run the actual browser crypto implementation with Node Web Crypto and the same
-  // OPAQUE WASM protocol. Only module loading and the browser global are adapted.
+  // Browser and Node use the same encryption implementation, without rewriting code.
   const source = await fs.readFile(path.join(__dirname, "../public/scripts/crypto.js"), "utf8");
   assert.match(source, /from "\.\.\/vendor\/opaque\/opaque-client\.js"/);
-  const previousWindow = globalThis.window;
-  globalThis.window = {};
-  globalThis.__integrationOpaque = require("@47ng/opaque-server");
-  try {
-    const adapted = source.replace(/^import .*;\r?\n/, "const { Login, Registration } = globalThis.__integrationOpaque; const initialiseOpaque = async () => {};\n")
-      .replaceAll("import.meta.url", JSON.stringify(`${origin}/scripts/crypto.js`));
-    const client = await import(`data:text/javascript;base64,${Buffer.from(adapted).toString("base64")}`);
+    const { createNeutronClient } = await import("../public/scripts/crypto-core.mjs");
+    const client = createNeutronClient({ ...require("@47ng/opaque-server"), baseUrl: origin });
     const sender = await client.deriveRoom("integration-only-PIN-not-a-real-secret");
     const receiver = await client.deriveRoom("integration-only-PIN-not-a-real-secret");
     await client.authenticateRoom(sender);
@@ -80,8 +74,4 @@ test("exported client routes API calls to its own service and exchanges triple-e
     assert.equal(received.timestampUtc, descriptors.messages[0].createdAt);
     receiver.sessionKey = new Uint8Array(32);
     await assert.rejects(client.claimMessage(receiver, descriptors.messages[0]), /session_expired/);
-  } finally {
-    globalThis.window = previousWindow;
-    delete globalThis.__integrationOpaque;
-  }
 }));
