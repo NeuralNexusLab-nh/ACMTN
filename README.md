@@ -44,10 +44,6 @@ Run Express behind a TLS-terminating reverse proxy for `https://neutron.nxlabtw.
 
 Production access: `https://neutron.nxlabtw.com`
 
-### Browzen Access on the same service
-
-Set `NEUTRON_BZN_SECRET` to a locally generated `bzn1.…` private seed to host Neutron under a genuine public-key `.bzn` address with the existing Node service. Keep the existing build/start commands. The homepage adds **Browzen Access** to the right of **Onion Access**; `/api/bzn` exposes only the public address and state. See [Browzen setup, ENV and limitations](docs/BROWZEN-ACCESS.md). The native adapter shares the browser's encryption implementation and uses the pinned upstream BznHost protocol; no extra service or browser tab is required.
-
 ### Onion access on the same Render Web Service
 
 The existing Node Web Service can install Tor during its build. `node server.js` starts Express first, then manages one Tor child process. It does not create a second Render service, background worker, relay node, or public SOCKS proxy. HTTP continues to work while Tor connects or restarts. Tor uses additional memory and bandwidth within the same instance.
